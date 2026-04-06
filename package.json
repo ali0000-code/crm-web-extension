@@ -1,0 +1,20 @@
+{
+  "name": "crm-extension",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs --prod",
+    "dev": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "auth:setup": "npx tsx tests/auth-setup.ts",
+    "test": "npx playwright test",
+    "test:messenger": "npx playwright test --project=messenger",
+    "test:groups": "npx playwright test --project=groups",
+    "test:report": "npx playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^25.3.3",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.0"
+  }
+}

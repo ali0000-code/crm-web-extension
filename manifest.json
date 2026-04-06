@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "Messenger CRM Pro",
+  "version": "3.0.0",
+  "description": "Tag, search and bulk-message Facebook Messenger contacts with secure token-based authentication.",
+  
+  "action": { 
+    "default_popup": "popup.html",
+    "default_title": "Messenger CRM Pro"
+  },
+  
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs",
+    "cookies"
+  ],
+  
+  "host_permissions": [
+    "https://www.facebook.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": ["https://www.facebook.com/messages/*"],
+      "js": [
+        "config.js",
+        "jquery-3.7.1.min.js",
+        "facebook-account-validator.js",
+        "messengerInject.js",
+        "notesInject.js"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://www.facebook.com/*"],
+      "js": [
+        "config.js",
+        "jquery-3.7.1.min.js",
+        "facebook-account-validator.js",
+        "facebookAutoLink.js",
+        "groupsInject.js",
+        "notesInject.js"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["config.js", "webappSync.js"],
+      "run_at": "document_end"
+    }
+  ],
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "externally_connectable": {
+    "matches": [
+      "http://localhost/*",
+      "http://localhost:8000/*",
+      "http://127.0.0.1/*",
+      "http://127.0.0.1:8000/*"
+    ]
+  }
+}

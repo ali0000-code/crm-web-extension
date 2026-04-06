@@ -1,0 +1,838 @@
+<!--
+  MESSENGER CRM PRO - POPUP INTERFACE
+
+  Complete version with Sanctum token authentication
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Messenger CRM Pro</title>
+  <link rel="stylesheet" href="popup.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Configuration -->
+  <script src="config.js"></script>
+  <!-- SANCTUM TOKEN AUTHENTICATION -->
+  <script src="fixed-key-auth.js"></script>
+
+  <!-- FULL-PAGE AUTHENTICATION -->
+  <div id="authModal" class="auth-page" style="display: none;">
+    <div class="auth-page-inner">
+      <!-- Logo & Branding -->
+      <div class="auth-page-brand">
+        <img src="icons/icon32.png" alt="CRM Logo" class="auth-page-logo"/>
+        <h1 class="auth-page-title">Messenger CRM Pro</h1>
+        <p id="authModalSubtitle" class="auth-page-subtitle">Enter your auth key from the web dashboard to get started</p>
+      </div>
+
+      <!-- Loading State -->
+      <div id="authLoading" class="auth-state" style="display: block;">
+        <div style="text-align: center; padding: 30px 20px;">
+          <div style="
+            width: 36px; height: 36px; border: 3px solid var(--border);
+            border-top: 3px solid var(--accent); border-radius: 50%;
+            animation: spin 1s linear infinite; margin: 0 auto 14px;
+          "></div>
+          <div style="color: var(--text-2); font-size: 13px;">Initializing authentication...</div>
+        </div>
+      </div>
+
+      <!-- Welcome + Token Input -->
+      <div id="authWelcome" class="auth-state" style="display: none;">
+        <form id="jwtForm" class="auth-form">
+          <div class="form-group">
+            <label for="jwtTokenInput">Auth Key</label>
+            <textarea
+              id="jwtTokenInput"
+              class="modern-input jwt-token-input"
+              placeholder="Paste your auth key here..."
+              rows="2"
+              required
+              style="resize: none;"
+            ></textarea>
+            <div class="input-help">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                <path d="M12 16V12M12 8H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span>Get your auth key from the web dashboard: Auth Key → Show → Copy</span>
+            </div>
+          </div>
+
+          <div class="auth-actions">
+            <button type="submit" id="jwtSubmitBtn" class="btn btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M9 12L11 14L15 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Authenticate
+            </button>
+
+            <button type="button" id="openDashboardFromWelcome" class="btn btn-secondary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M18 13V6C18 5.46957 17.7893 4.96086 17.4142 4.58579C17.0391 4.21071 16.5304 4 16 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V18C2 18.5304 2.21071 19.0391 2.58579 19.4142C2.96086 19.7893 3.46957 20 4 20H16C16.5304 20 17.0391 19.7893 17.4142 19.4142C17.7893 19.0391 18 18.5304 18 18V13Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <polyline points="15,10 20,10 20,15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="14" y1="11" x2="20" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              Open Web Dashboard
+            </button>
+
+            <button type="button" id="openSupportBtn" class="btn btn-link">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              Need help? Contact Support
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Keep hidden authJWT div for JS compatibility -->
+      <div id="authJWT" class="auth-state" style="display: none;"></div>
+
+      <!-- Error Display -->
+      <div id="authError" class="auth-error" style="
+        display: none; margin-top: 16px; padding: 12px;
+        background: rgba(220, 38, 38, 0.1); border: 1px solid rgba(220, 38, 38, 0.2); border-radius: 8px;
+        color: #f87171; font-size: 13px;
+      "></div>
+    </div>
+  </div>
+
+  <!-- MAIN INTERFACE -->
+  <div id="mainInterface" style="display: none; flex-direction: column; height: 100%;">
+    <!-- HEADER -->
+    <header class="header-modern">
+      <div class="header-content">
+        <!-- Brand -->
+        <div class="brand-section">
+          <div class="logo-container">
+            <img class="logo" src="icons/icon32.png" alt="CRM Logo"/>
+            <div class="brand-text">
+              <span class="brand-name">Messenger CRM</span>
+              <span class="brand-subtitle">Pro</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right controls (always visible) -->
+        <div class="header-controls">
+          <div id="syncStatusDot" class="sync-status-dot" title="Sync status"></div>
+          <!-- User avatar + dropdown -->
+          <div id="userProfile" class="user-profile" style="display:none;">
+            <div class="dropdown-container">
+              <button id="userMenuBtn" class="user-avatar-btn" aria-label="User menu" title="Account & Sign out">
+                <div id="userAvatar" class="user-avatar-small">U</div>
+                <svg class="avatar-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <div id="userDropdown" class="user-dropdown" style="display:none;">
+                <!-- User info inside dropdown -->
+                <div class="dropdown-user-info">
+                  <div id="userDisplayName" class="dropdown-user-name">User</div>
+                  <div id="userEmail" class="dropdown-user-email">user@example.com</div>
+                  <div class="sync-status-container">
+                    <div class="sync-status-dot-sm" id="syncStatusDotDropdown"></div>
+                    <span id="syncStatusText" class="sync-status-text">Synced</span>
+                  </div>
+                  <div id="tokenExpiryContainer" class="token-expiry-container" style="display:none;">
+                    <span id="tokenExpiryText" class="token-expiry-text"></span>
+                  </div>
+                </div>
+                <div class="dropdown-item" id="supportBtn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                    <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                  Support
+                </div>
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-item danger" id="signOutBtn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <polyline points="16,17 21,12 16,7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <line x1="21" y1="12" x2="9" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                  Sign Out
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search Row -->
+      <div class="header-search-row">
+        <div class="search-wrapper">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M21 21L16.514 16.506M19 10.5C19 15.194 15.194 19 10.5 19C5.806 19 2 15.194 2 10.5C2 5.806 5.806 2 10.5 2C15.194 2 19 5.806 19 10.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <input id="searchBox" placeholder="Search tags or contacts..." class="search-input"/>
+        </div>
+      </div>
+    </header>
+
+    <!-- VALIDATION ERROR BANNER -->
+    <div id="validationErrorBanner" style="display: none; background: #fee2e2; border-left: 4px solid #dc2626; padding: 12px 16px; margin: 0;">
+      <div style="display: flex; align-items: start; gap: 12px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink: 0; color: #dc2626; margin-top: 2px;">
+          <path d="M12 9V13M12 17H12.01M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; color: #991b1b; margin-bottom: 4px;">Extension Disabled</div>
+          <div id="validationErrorMessage" style="font-size: 13px; color: #7f1d1d; line-height: 1.4;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ENHANCED ADD TAG FORM -->
+    <div id="addForm" class="add-form-modern">
+      <div class="form-header">
+        <h3>Create New Tag</h3>
+        <p>Organize your contacts with custom tags</p>
+      </div>
+      <div class="form-content">
+        <div class="input-group">
+          <label for="newTagName">Tag Name</label>
+          <input id="newTagName" placeholder="Enter tag name..." maxlength="20" class="modern-input"/>
+        </div>
+        <div class="color-selection">
+          <label>Choose Color</label>
+          <div class="colorOptions">
+            <div class="colorCircle modern-color" data-color="#4F46E5" style="background:#4F46E5" title="Indigo"></div>
+            <div class="colorCircle modern-color" data-color="#059669" style="background:#059669" title="Emerald"></div>
+            <div class="colorCircle modern-color" data-color="#DC2626" style="background:#DC2626" title="Red"></div>
+            <div class="colorCircle modern-color" data-color="#D97706" style="background:#D97706" title="Amber"></div>
+            <div class="colorCircle modern-color" data-color="#7C3AED" style="background:#7C3AED" title="Violet"></div>
+            <div class="colorCircle modern-color" data-color="#0891B2" style="background:#0891B2" title="Cyan"></div>
+            <div class="colorCircle modern-color" data-color="#BE185D" style="background:#BE185D" title="Pink"></div>
+            <div class="colorCircle modern-color" data-color="#374151" style="background:#374151" title="Gray"></div>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button id="saveTagBtn" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Create Tag
+        </button>
+        <button id="cancelTagBtn" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+
+    <!-- REDESIGNED TAG SECTION -->
+     <main class="main-content">
+    <section class="tags-section">
+      <div class="section-header">
+        <div class="section-title">
+          <button id="collapseTagsBtn" class="collapse-btn" title="Collapse/Expand Tags">
+            <svg class="collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <svg class="section-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M20.59 13.41L13.42 20.58A2 2 0 0 1 12.01 21.17H2.84A.84.84 0 0 1 2 20.33V11.16A2 2 0 0 1 2.59 9.75L9.76 2.58A2 2 0 0 1 11.17 2H20.33A.67.67 0 0 1 21 2.67V11.83A2 2 0 0 1 20.59 13.41Z" stroke="currentColor" stroke-width="2"/>
+            <path d="M7 7H7.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <h3>Tags</h3>
+          <span id="tagCount" class="count-badge">0</span>
+        </div>
+        <button id="addTagBtn" class="btn-icon-modern" title="Add new tag">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div id="tagContainer" class="content-container"></div>
+    </section>
+
+    <!-- REDESIGNED CONTACT SECTION -->
+    <section class="contacts-section">
+      <div class="section-header">
+        <div class="section-title">
+          <button id="collapseContactsBtn" class="collapse-btn" title="Collapse/Expand Contacts">
+            <svg class="collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <svg class="section-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+            <path d="M23 21V19C23 18.1645 22.7155 17.3541 22.2094 16.7007C21.7033 16.0473 20.9944 15.5885 20.2 15.3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M16 3.13C16.8604 3.35031 17.623 3.85071 18.1676 4.55232C18.7122 5.25392 19.0078 6.11683 19.0078 7.005C19.0078 7.89317 18.7122 8.75608 18.1676 9.45768C17.623 10.1593 16.8604 10.6597 16 10.88" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <h3 id="contactHeader">Contacts</h3>
+          <span id="contactCount" class="count-badge">0</span>
+        </div>
+      </div>
+      <div id="contactContainer" class="content-container contacts-container">
+        <!-- contactHeaderRow with All/Remove is rendered here by JS (same as tags) -->
+      </div>
+    </section>
+
+    <!-- FRIEND REQUEST TRACKING SECTION -->
+    <section class="friend-requests-section">
+      <div class="section-header">
+        <div class="section-title">
+          <button id="collapseFriendRequestsBtn" class="collapse-btn" title="Collapse/Expand Friend Requests">
+            <svg class="collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <svg class="section-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M16 21V19C16 18.1645 15.7155 17.3541 15.2094 16.7007C14.7033 16.0473 13.9944 15.5885 13.2 15.3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M8 3.13C8.86039 3.35031 9.62303 3.85071 10.1676 4.55232C10.7122 5.25392 11.0078 6.11683 11.0078 7.005C11.0078 7.89317 10.7122 8.75608 10.1676 9.45768C9.62303 10.1593 8.86039 10.6597 8 10.88" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+            <path d="M20 8V6C20 5.46957 19.7893 4.96086 19.4142 4.58579C19.0391 4.21071 18.5304 4 18 4H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="18,2 20,4 18,6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <h3>Friend Requests</h3>
+          <span id="friendRequestCount" class="count-badge">0</span>
+        </div>
+        <button id="manageFriendRequestsBtn" class="btn-icon-modern" title="View friend requests">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M16 11C17.6569 11 19 9.65685 19 8C19 6.34315 17.6569 5 16 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M21 21C21 18.2386 18.7614 16 16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="2"/>
+            <path d="M3 21C3 18.2386 5.23858 16 8 16H10C12.7614 16 15 18.2386 15 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="friend-request-stats">
+        <div class="stats-grid">
+          
+          <div class="stat-card">
+            <div class="stat-icon pending">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                <polyline points="12,6 12,12 16,14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="stat-content">
+              <div class="stat-value" id="friendRequestsPending">0</div>
+              <div class="stat-label">Pending</div>
+            </div>
+          </div>
+          
+          <div class="stat-card">
+            <div class="stat-icon accepted">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M22 11.08V12C21.9988 14.1564 21.3005 16.2547 20.0093 17.9818C18.7182 19.7088 16.9033 20.9725 14.8354 21.5839C12.7674 22.1953 10.5573 22.1219 8.53447 21.3746C6.51168 20.6273 4.78465 19.2461 3.61096 17.4371C2.43727 15.628 1.87979 13.4907 2.02168 11.3391C2.16356 9.18755 2.99721 7.14833 4.39828 5.5015C5.79935 3.85467 7.69279 2.69539 9.79619 2.1917C11.8996 1.68801 14.1003 1.86756 16.07 2.70599" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <polyline points="22,4 12,14.01 9,11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="stat-content">
+              <div class="stat-value" id="friendRequestsAccepted">0</div>
+              <div class="stat-label">Accepted</div>
+            </div>
+          </div>
+          
+        </div>
+        
+        <div class="friend-request-info">
+          <div class="info-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 16V12M12 8H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span>Friend requests are tracked automatically when you click "Add Friend" buttons in Facebook Groups</span>
+          </div>
+          <div class="info-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M12 22S8 18 8 12C8 10.9391 8.42143 9.92172 9.17157 9.17157C9.92172 8.42143 10.9391 8 12 8C13.0609 8 14.0781 8.42143 14.8284 9.17157C15.5786 9.92172 16 10.9391 16 12C16 18 12 22 12 22Z" stroke="currentColor" stroke-width="2"/>
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <span>To Update Friends Status click Refresh Status</span>
+          </div>
+        </div>
+      </div>
+      <!-- Add this after the existing stats grid -->
+<div class="friend-request-actions">
+  <button id="refreshFriendRequestStatusBtn" class="btn btn-primary btn-small">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <path d="M23 4V10H17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M20.49 15C19.9828 16.8395 18.8375 18.4734 17.2473 19.6247C15.6572 20.7759 13.7267 21.3734 11.7586 21.3218C9.79056 21.2701 7.89661 20.5719 6.36218 19.3336C4.82775 18.0954 3.74463 16.3957 3.29543 14.4812C2.84624 12.5667 3.05094 10.5486 3.87735 8.75003C4.70376 6.95147 6.10963 5.47893 7.8832 4.57007C9.65677 3.66122 11.6979 3.37368 13.6586 3.75671C15.6194 4.13974 17.3986 5.16705 18.69 6.67003L23 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Refresh Status
+  </button>
+</div>
+
+<!-- Progress indicator -->
+<div id="friendRequestCheckProgress" class="progress-container" style="display: none;">
+  <div class="progress-text">Checking friend request statuses...</div>
+  <div class="progress-bar-container">
+    <div class="progress-bar"></div>
+  </div>
+</div>
+
+<!-- Last check timestamp -->
+<div class="last-check-info">
+  <span id="lastStatusCheckTime" class="last-check-text">Never checked</span>
+</div>
+    </section>
+
+    <!-- CONTACT NOTES SECTION -->
+    <section class="notes-section">
+      <div class="section-header">
+        <div class="section-title">
+          <button id="collapseNotesBtn" class="collapse-btn" title="Collapse/Expand Notes">
+            <svg class="collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <svg class="section-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="10,9 9,9 8,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <h3>Contact Notes</h3>
+          <span id="notesContactCount" class="count-badge">0</span>
+        </div>
+      </div>
+
+      <div id="notesContainer" class="content-container">
+        <div class="empty-state" id="notesEmptyState">
+          <div class="empty-state-icon">📝</div>
+          <p>No notes yet</p>
+          <p class="empty-state-subtitle">Add notes to contacts in Messenger to see them here</p>
+        </div>
+
+        <div id="notesListContainer" class="notes-list" style="display: none;">
+          <!-- Notes will be populated here -->
+        </div>
+      </div>
+
+      <div id="notesInfoSection" class="notes-info">
+        <div class="info-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+            <path d="M12 16V12M12 8H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span>Click the ✏️ button on any contact in Messenger or Groups to add notes</span>
+        </div>
+        <div class="info-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M12 22S8 18 8 12C8 10.9391 8.42143 9.92172 9.17157 9.17157C9.92172 8.42143 10.9391 8 12 8C13.0609 8 14.0781 8.42143 14.8284 9.17157C15.5786 9.92172 16 10.9391 16 12C16 18 12 22 12 22Z" stroke="currentColor" stroke-width="2"/>
+            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+          </svg>
+          <span>Notes are synced across all your devices in real-time</span>
+        </div>
+      </div>
+    </section>
+
+    </main>
+
+    <!-- MODERN ACTION BAR — outside main so it doesn't scroll -->
+    <footer class="action-bar">
+      <button id="exportBtn" class="action-btn export-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="7,10 12,15 17,10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span>Export</span>
+      </button>
+      <button id="bulkBtn" class="action-btn bulk-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M21 11.5C21.0034 12.8199 20.6951 14.1219 20.1 15.3C19.3944 16.7118 18.3098 17.8992 16.9674 18.7293C15.6251 19.5594 14.0782 19.9994 12.5 20C11.1801 20.0035 9.87812 19.6951 8.7 19.1L3 21L4.9 15.3C4.30493 14.1219 3.99656 12.8199 4 11.5C4.00061 9.92179 4.44061 8.37488 5.27072 7.03258C6.10083 5.69028 7.28825 4.60557 8.7 3.90003C9.87812 3.30496 11.1801 2.99659 12.5 3.00003H13C15.0843 3.11502 17.053 3.99479 18.5291 5.47086C20.0052 6.94694 20.885 8.91568 21 11V11.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Bulk Send</span>
+      </button>
+      <button id="saveSelectedBtn" class="action-btn save-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H16L21 8V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="9,9 9,15 15,15 15,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Save from Both</span>
+      </button>
+    </footer>
+  </div>
+
+  <!-- NOTES DETAIL MODAL -->
+  <div id="notesDetailModal" class="modal-modern" style="display: none;">
+    <div class="modal-backdrop"></div>
+    <div class="modal-container" style="max-width: 400px;">
+      <div class="modal-header" style="display: flex; align-items: center; gap: 10px;">
+        <div id="notesDetailAvatar" class="note-contact-avatar"></div>
+        <div style="flex: 1; min-width: 0;">
+          <h2 id="notesDetailName" style="margin: 0;"></h2>
+          <p id="notesDetailCount" style="margin: 0;"></p>
+        </div>
+        <button id="notesModalCloseBtn" class="modal-close" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-content" style="max-height: 380px;">
+        <!-- Add Note Form -->
+        <div class="notes-add-form">
+          <textarea id="newNoteText" class="modern-input" placeholder="Write a note..." rows="2" style="resize: none;"></textarea>
+          <button id="addNoteBtn" class="btn btn-primary" style="width: 100%;" disabled>Add Note</button>
+        </div>
+        <!-- Notes List -->
+        <div id="notesDetailList" class="notes-detail-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BULK MESSAGING MODAL -->
+  <div id="bulkModal" class="modal-modern">
+    <div class="modal-backdrop"></div>
+    <div class="modal-container">
+      <div class="modal-header">
+        <h2>Bulk Message Campaign</h2>
+        <p>Send personalized messages to multiple contacts</p>
+        <button id="closeBulkX" class="modal-close" aria-label="Close modal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-content">
+        <!-- Target Selection -->
+        <div class="form-section">
+          <div class="section-header-mini">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M20.59 13.41L13.42 20.58A2 2 0 0 1 12.01 21.17H2.84A.84.84 0 0 1 2 20.33V11.16A2 2 0 0 1 2.59 9.75L9.76 2.58A2 2 0 0 1 11.17 2H20.33A.67.67 0 0 1 21 2.67V11.83A2 2 0 0 1 20.59 13.41Z" stroke="currentColor" stroke-width="2"/>
+              <path d="M7 7H7.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <h3>Target Tags</h3>
+          </div>
+          <div id="bulkTags" class="tag-selection-grid"></div>
+          <div class="info-card" style="margin-top: 12px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 16V12M12 8H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div>
+              <strong>Note:</strong> Both Messenger and Facebook Group contacts can receive bulk messages if they have valid Facebook user IDs.
+            </div>
+          </div>
+        </div>
+
+        <!-- Message Template -->
+        <div class="form-section">
+          <div class="section-header-mini">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M21 11.5C21.0034 12.8199 20.6951 14.1219 20.1 15.3C19.3944 16.7118 18.3098 17.8992 16.9674 18.7293C15.6251 19.5594 14.0782 19.9994 12.5 20C11.1801 20.0035 9.87812 19.6951 8.7 19.1L3 21L4.9 15.3C4.30493 14.1219 3.99656 12.8199 4 11.5C4.00061 9.92179 4.44061 8.37488 5.27072 7.03258C6.10083 5.69028 7.28825 4.60557 8.7 3.90003C9.87812 3.30496 11.1801 2.99659 12.5 3.00003H13C15.0843 3.11502 17.053 3.99479 18.5291 5.47086C20.0052 6.94694 20.885 8.91568 21 11V11.5Z" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <h3>Message Template</h3>
+          </div>
+          
+          <div class="template-controls">
+            <div class="template-nav">
+              <button id="prevTemplate" class="nav-btn" title="Previous template">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <input id="templateNameInput" placeholder="Template name..." class="template-name-input"/>
+              <button id="nextTemplate" class="nav-btn" title="Next template">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button id="saveTemplateBtn" class="action-btn-small save" title="Save template">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H16L21 8V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21Z" stroke="currentColor" stroke-width="2"/>
+                </svg>
+              </button>
+              <button id="deleteTemplateBtn" class="action-btn-small delete" title="Delete template">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M3 6H5H21M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" stroke-width="2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          <textarea id="bulkMessage" placeholder="Hi {first_name}, hope you're doing well..." class="message-textarea"></textarea>
+          
+          <div class="info-card">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 16V12M12 8H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div>
+              <strong>Personalization Variables:</strong>
+              <span class="variables">
+                <code>{first_name}</code>, <code>{last_name}</code>, <code>{full_name}</code>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Campaign Settings -->
+        <div class="form-section">
+          <div class="section-header-mini">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <h3>Campaign Settings</h3>
+          </div>
+          
+          <div class="settings-grid">
+            <div class="setting-item">
+              <label for="delaySlider">Send Delay</label>
+              <div class="slider-container">
+                <input type="range" id="delaySlider" min="5" max="60" value="10" class="modern-slider">
+                <span class="slider-value"><span id="delayVal">10</span>s</span>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <label for="limitInput">Max Recipients</label>
+              <input type="number" id="limitInput" min="1" placeholder="No limit" class="modern-input">
+            </div>
+
+            <div class="setting-item">
+              <label for="batchSizeInput">Batch Size (0 = no batching)</label>
+              <input type="number" id="batchSizeInput" min="0" value="0" placeholder="0" class="modern-input">
+            </div>
+
+            <div class="setting-item">
+              <label for="batchWaitInput">Wait Between Batches (minutes)</label>
+              <input type="number" id="batchWaitInput" min="1" value="5" placeholder="5" class="modern-input">
+            </div>
+          </div>
+
+          <div id="batchInfo" class="info-card" style="margin-top: 12px; display: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="3" width="7" height="7" stroke="currentColor" stroke-width="2" rx="1"/>
+              <rect x="14" y="3" width="7" height="7" stroke="currentColor" stroke-width="2" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" stroke="currentColor" stroke-width="2" rx="1"/>
+              <rect x="14" y="14" width="7" height="7" stroke="currentColor" stroke-width="2" rx="1"/>
+            </svg>
+            <div>
+              <strong id="batchInfoText">Send 10 messages, then wait 5 minutes before continuing.</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="closeBulk" class="btn btn-secondary">Cancel</button>
+        <button id="sendBulkConfirm" class="btn btn-primary btn-gradient">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Send Campaign
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ENHANCED EXPORT MODAL -->
+  <div id="exportModal" class="modal-modern">
+    <div class="modal-backdrop"></div>
+    <div class="modal-container">
+      <div class="modal-header">
+        <h2>Export Data</h2>
+        <p>Choose your preferred export format and destination</p>
+        <button id="closeExportX" class="modal-close" aria-label="Close modal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-content">
+        <!-- Export Format Selection -->
+        <div class="form-section">
+          <div class="section-header-mini">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2"/>
+              <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <h3>Export Format</h3>
+          </div>
+          
+          <div class="export-options">
+            <label class="export-option-card">
+              <input type="radio" name="exportFormat" value="csv" checked>
+              <div class="export-option-content">
+                <div class="export-option-icon csv-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2"/>
+                    <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2"/>
+                    <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="2"/>
+                    <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="2"/>
+                  </svg>
+                </div>
+                <div class="export-option-details">
+                  <h4>CSV File</h4>
+                  <p>Download as spreadsheet-compatible CSV</p>
+                </div>
+              </div>
+            </label>
+
+            <label class="export-option-card">
+              <input type="radio" name="exportFormat" value="sheets">
+              <div class="export-option-content">
+                <div class="export-option-icon sheets-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2"/>
+                    <line x1="9" y1="9" x2="9" y2="15" stroke="currentColor" stroke-width="2"/>
+                    <line x1="15" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="2"/>
+                    <line x1="9" y1="12" x2="15" y2="12" stroke="currentColor" stroke-width="2"/>
+                  </svg>
+                </div>
+                <div class="export-option-details">
+                  <h4>Google Sheets</h4>
+                  <p>Export directly to Google Sheets</p>
+                </div>
+              </div>
+            </label>
+
+            <label class="export-option-card">
+              <input type="radio" name="exportFormat" value="json">
+              <div class="export-option-content">
+                <div class="export-option-icon json-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2"/>
+                    <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2"/>
+                    <path d="M12 16L10 14L12 12" stroke="currentColor" stroke-width="2"/>
+                    <path d="M12 12L14 14L12 16" stroke="currentColor" stroke-width="2"/>
+                  </svg>
+                </div>
+                <div class="export-option-details">
+                  <h4>JSON File</h4>
+                  <p>Download as structured JSON data</p>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Google Sheets Configuration -->
+        <div id="sheetsConfig" class="form-section" style="display: none;">
+          <div class="section-header-mini">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M10 13C10.4295 13.5741 10.9774 14.0491 11.6066 14.3929C12.2357 14.7367 12.9315 14.9411 13.6467 14.9923C14.3618 15.0435 15.0796 14.9403 15.7513 14.6897C16.4231 14.4392 17.0331 14.047 17.54 13.54L20.54 10.54C21.4508 9.59695 21.9548 8.33394 21.9434 7.02296C21.932 5.71198 21.4061 4.45791 20.4791 3.53087C19.5521 2.60383 18.298 2.07799 16.987 2.0666C15.676 2.0552 14.413 2.55918 13.47 3.47L11.75 5.18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M14 11C13.5705 10.4259 13.0226 9.9509 12.3934 9.60712C11.7643 9.26335 11.0685 9.05894 10.3533 9.00775C9.63819 8.95656 8.92037 9.05972 8.24864 9.31026C7.5769 9.5608 6.96687 9.95299 6.46 10.46L3.46 13.46C2.54918 14.403 2.04519 15.6661 2.05659 16.977C2.06798 18.288 2.59382 19.5421 3.52087 20.4691C4.44791 21.3962 5.70198 21.922 7.01296 21.9334C8.32394 21.9448 9.58701 21.4408 10.53 20.53L12.24 18.82" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <h3>Google Sheets URL</h3>
+          </div>
+          
+          <div class="input-group">
+            <label for="sheetsUrl">Google Sheets Link</label>
+            <input 
+              id="sheetsUrl" 
+              type="url"
+              placeholder="https://docs.google.com/spreadsheets/d/your-sheet-id/edit#gid=0" 
+              class="modern-input"
+            />
+            <div class="input-help">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                <path d="M12 16V12M12 8H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span>Make sure the sheet is publicly editable or shared with appropriate permissions</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export Preview -->
+        <div class="form-section">
+          <div class="section-header-mini">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M1 12L1 3C1 2.44772 1.44772 2 2 2L22 2C22.5523 2 23 2.44772 23 3L23 12M1 12L1 21C1 21.5523 1.44772 22 2 22L22 22C22.5523 22 23 21.5523 23 21L23 12M1 12L23 12" stroke="currentColor" stroke-width="2"/>
+              <path d="M8 7L8 17M16 7L16 17" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <h3>Data Preview</h3>
+          </div>
+          
+          <div class="export-preview">
+            <div class="preview-stats">
+              <div class="stat-item">
+                <span class="stat-label">Contacts:</span>
+                <span class="stat-value" id="previewContactCount">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Tags:</span>
+                <span class="stat-value" id="previewTagCount">0</span>
+              </div>
+            </div>
+            
+            <div class="preview-fields">
+              <h4>Exported Fields:</h4>
+              <div class="field-list">
+                <span class="field-tag">First Name</span>
+                <span class="field-tag">Last Name</span>
+                <span class="field-tag">Profile URL</span>
+                <span class="field-tag">Tags</span>
+                <span class="field-tag">User ID</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="cancelExport" class="btn btn-secondary">Cancel</button>
+        <button id="confirmExport" class="btn btn-primary btn-gradient">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="7,10 12,15 17,10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Export Data
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ENHANCED SAVE SELECTED MODAL -->
+  <div id="saveSelectedModal" class="modal-modern">
+    <div class="modal-backdrop"></div>
+    <div class="modal-container save-modal">
+      <div class="modal-header">
+        <h2>Save Contacts to Tags</h2>
+        <p>Organize selected contacts with tags</p>
+        <button id="closeSaveX" class="modal-close" aria-label="Close modal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-content">
+        <div class="form-section">
+          <div class="section-header-mini">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M20.59 13.41L13.42 20.58A2 2 0 0 1 12.01 21.17H2.84A.84.84 0 0 1 2 20.33V11.16A2 2 0 0 1 2.59 9.75L9.76 2.58A2 2 0 0 1 11.17 2H20.33A.67.67 0 0 1 21 2.67V11.83A2 2 0 0 1 20.59 13.41Z" stroke="currentColor" stroke-width="2"/>
+              <path d="M7 7H7.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <h3>Available Tags</h3>
+          </div>
+          <div id="saveTagsList" class="tag-selection-grid"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="cancelSaveSelected" class="btn btn-secondary">Cancel</button>
+        <button id="confirmSaveSelected" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Save to Tags
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
