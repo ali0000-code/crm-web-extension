@@ -72,18 +72,6 @@ function toast(msg, ok = true) {
   setTimeout(() => t.remove(), 2500);
 }
 
-function throttle(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
 function debounce(func, wait) {
   let timeout;
   return function executedFunction(...args) {

@@ -62,26 +62,6 @@ function stayAlive() {
 }
 
 /* ===============================
-   LEGACY SYNC STUBS (Firebase removed)
-   ===============================
-*/
-
-/**
- * Legacy sync stubs — Firebase/Firestore has been fully removed.
- * Data is now stored in Chrome extension local storage and synced
- * to the Laravel backend via API calls.
- */
-async function syncToFirestore(_data) {
-  // No-op: Firebase removed. Data syncs to Laravel backend via API.
-  return { success: true, reason: 'firebase_removed' };
-}
-
-async function removeFromFirestore(_userId) {
-  // No-op: Firebase removed. Data managed by Laravel backend.
-  return { success: true, reason: 'firebase_removed' };
-}
-
-/* ===============================
    DATA MIGRATION AND CLEANUP
    ===============================
 
