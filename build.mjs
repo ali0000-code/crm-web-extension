@@ -32,7 +32,7 @@ const sourceManifest = JSON.parse(readFileSync(resolve(__dirname, 'manifest.json
 // ── Dev build entries (individual files, no bundling) ────────────────
 
 const devEntries = {
-  background: ['background.js'],
+  background: ['background-main.js', 'background.js'],
   popup:      ['popup.js'],
   lib:        ['config.js', 'fixed-key-auth.js'],
   content:    [
@@ -198,9 +198,10 @@ if (isProd) {
   // 2. Bundle popup (config + fixed-key-auth + popup.js)
   await bundleAndMinify(popupSources, resolve(DIST, 'popup.js'));
 
-  // 3. Minify background.js (standalone, no config needed)
-  const bgCode = readFileSync(resolve(__dirname, 'background.js'), 'utf8');
-  const { code: bgMin } = await esbuild.transform(bgCode, {
+  // 3. Minify background.js (concatenate config + background for production)
+  const bgConfig = readSource('config.js');
+  const bgMain = readFileSync(resolve(__dirname, 'background.js'), 'utf8');
+  const { code: bgMin } = await esbuild.transform(bgConfig + '\n;\n' + bgMain, {
     minify: true,
     target: ['chrome110'],
     charset: 'utf8',

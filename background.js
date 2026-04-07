@@ -1,5 +1,3 @@
-importScripts('config.js');
-
 /**
  * MESSENGER CRM EXTENSION - BACKGROUND SERVICE WORKER
  *

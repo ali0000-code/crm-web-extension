@@ -58,7 +58,7 @@
   ],
   
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background-main.js"
   },
   
   "externally_connectable": {
