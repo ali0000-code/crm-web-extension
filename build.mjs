@@ -210,15 +210,27 @@ if (isProd) {
   });
   writeFileSync(resolve(DIST, 'background.js'), bgMin);
 
-  // 4. Process popup.html (remove scripts, add single popup.js in <head>)
+  // 4. Output standalone messengerInject.js for SPA injection from background.js
+  const messengerCode = readFileSync(resolve(__dirname, 'messengerInject.js'), 'utf8');
+  const { code: messengerMin } = await esbuild.transform(messengerCode, {
+    minify: true,
+    target: ['chrome110'],
+    charset: 'utf8',
+    legalComments: 'none',
+    drop: ['debugger'],
+    pure: ['console.log', 'console.warn', 'console.info', 'console.debug'],
+  });
+  writeFileSync(resolve(DIST, 'messengerInject.js'), messengerMin);
+
+  // 5. Process popup.html (remove scripts, add single popup.js in <head>)
   buildPopupHtml();
 
-  // 5. Copy CSS + icon directories
+  // 6. Copy CSS + icon directories
   const cssSrc = resolve(__dirname, 'popup.css');
   if (existsSync(cssSrc)) cpSync(cssSrc, resolve(DIST, 'popup.css'));
   copyDirs();
 
-  // 6. Handle manifest.json — don't overwrite if it already existed
+  // 7. Handle manifest.json — don't overwrite if it already existed
   if (savedManifest) {
     writeFileSync(resolve(DIST, 'manifest.json'), savedManifest);
     console.log('  manifest.json: preserved existing (not overwritten)');

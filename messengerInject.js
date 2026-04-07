@@ -32,6 +32,12 @@
  *   - Notes Panel: opens a per-contact notes modal via notesInject.js
  */
 
+// Prevent double-initialization when injected via both manifest and background SPA detection
+if (window.__CRM_MESSENGER_LOADED) {
+  console.log('[CRM] messengerInject already loaded, skipping');
+} else {
+window.__CRM_MESSENGER_LOADED = true;
+
 console.log('[CRM] Enhanced content script loaded on', location.href);
 
 /* ===============================
@@ -2123,3 +2129,5 @@ function initializeMessengerCRM() {
 
     console.log('[CRM] Messenger CRM initialized successfully');
 }
+
+} // end __CRM_MESSENGER_LOADED guard

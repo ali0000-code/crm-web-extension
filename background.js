@@ -3628,6 +3628,43 @@ if (chrome.cookies && chrome.cookies.onChanged) {
 }
 
 /* ===============================
+   SPA NAVIGATION DETECTION
+   ===============================
+
+   Facebook is a Single Page Application. When a user navigates from
+   facebook.com to facebook.com/messages/* via client-side routing,
+   Chrome does NOT inject the manifest content_scripts for /messages/*.
+   This listener detects that URL change and programmatically injects
+   messengerInject.js so the Messenger CRM UI always loads.
+*/
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  // Only care about URL changes to facebook.com/messages (www, web, or bare domain)
+  if (!changeInfo.url) return;
+  if (!/^https?:\/\/(www\.|web\.)?facebook\.com\/messages(\/|$|\?)/.test(changeInfo.url)) return;
+
+  // Check if messengerInject is already loaded in this tab
+  chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => !!window.__CRM_MESSENGER_LOADED,
+  }).then(results => {
+    if (results?.[0]?.result) return; // already loaded, nothing to do
+
+    // Inject messengerInject.js (dependencies like config, jQuery, validator
+    // are already present from the facebook.com/* content scripts)
+    chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['messengerInject.js'],
+    }).then(() => {
+      console.log('[Background] Injected messengerInject.js via SPA navigation detection');
+    }).catch(err => {
+      console.error('[Background] Failed to inject messengerInject.js:', err);
+    });
+  }).catch(() => {
+    // Tab may not be accessible (e.g. discarded or devtools)
+  });
+});
+
+/* ===============================
    STARTUP
    ===============================
 

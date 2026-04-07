@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Messenger CRM Pro",
-  "version": "3.0.0",
+  "version": "1.0.0",
   "description": "Turn Facebook Messenger into a CRM — tag contacts, bulk-message with templates, track friend requests, add notes & export.",
   
   "action": { 
@@ -17,7 +17,8 @@
   ],
   
   "host_permissions": [
-    "https://www.facebook.com/*",
+    "*://*.facebook.com/*",
+    "*://crm.test/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
