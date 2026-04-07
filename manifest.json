@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Messenger CRM Pro",
   "version": "3.0.0",
-  "description": "Tag, search and bulk-message Facebook Messenger contacts with secure token-based authentication.",
+  "description": "Turn Facebook Messenger into a CRM — tag contacts, bulk-message with templates, track friend requests, add notes & export.",
   
   "action": { 
     "default_popup": "popup.html",
