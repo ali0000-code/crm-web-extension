@@ -209,7 +209,7 @@ if (isProd) {
     drop: ['debugger'],
     pure: ['console.log', 'console.warn', 'console.info', 'console.debug'],
   });
-  writeFileSync(resolve(DIST, 'background.js'), bgMin);
+  writeFileSync(resolve(DIST, 'background-main.js'), bgMin);
 
   // 4. Output standalone messengerInject.js for SPA injection from background.js
   const messengerCode = readFileSync(resolve(__dirname, 'messengerInject.js'), 'utf8');
