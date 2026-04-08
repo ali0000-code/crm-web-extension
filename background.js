@@ -1542,7 +1542,7 @@ async function startFriendRequestRefresh() {
     
     // Save timestamp for last status check
     chrome.storage.local.set({ 
-      lastStatusCheck: Date.now() 
+      lastStatusCheck: new Date().toISOString()
     });
     
     notifyFriendRequestProgress();
