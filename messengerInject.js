@@ -1970,29 +1970,28 @@ function initializeCheckboxInjection() {
    =============================== */
 
 /**
- * Handle requests from popup to clear all selections
+ * Handle requests from the popup interface.
+ * Single listener for all actions — avoids the race condition where
+ * Chrome closes the message channel after the first listener returns.
  */
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+    console.log('[CRM] message from popup', msg);
+
     if (msg.action === 'clearSelection') {
         $(SELECTORS.CRM_CHECKBOX).prop('checked', false);
         window.selectedUsers.clear();
         updateTagCounter();
         reply({ status: 'cleared' });
+        return;
     }
-});
 
-/**
- * Handle various requests from the popup interface
- */
-chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-    console.log('[CRM] message from popup', msg);
-    
     if (msg.action === 'getSelectedUsers') {
         const selectedData = Array.from(window.selectedUsers).map(JSON.parse);
         console.log('[CRM] returning selected users with profile pictures', selectedData);
         reply(selectedData);
+        return;
     }
-    
+
     if (msg.action === 'addSelectedToTags' && msg.tags.length) {
         const selected = Array.from(window.selectedUsers).map(JSON.parse);
         selected.forEach(u => {
@@ -2001,6 +2000,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
             });
         });
         reply({ status: 'ok', added: selected.length });
+        return;
     }
 });
 

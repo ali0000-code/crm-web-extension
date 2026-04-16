@@ -2212,7 +2212,10 @@ function extractFriendsData(targetFriendRequests) {
     
     // Start the process
     waitForContent();
-    
+
+    // Poll for results and resolve when done.
+    // Safety timeout at 60s covers worst-case scrolling (50 attempts × 800ms + DOM processing).
+    // The old 15s timeout was too short — scrollToLoadAll alone can take 40s+ on large lists.
     return new Promise((resolve) => {
       const checkResults = () => {
         if (foundFriends.length > 0 || attempts >= maxAttempts) {
@@ -2221,9 +2224,9 @@ function extractFriendsData(targetFriendRequests) {
           setTimeout(checkResults, 500);
         }
       };
-      
+
       setTimeout(checkResults, 2000);
-      setTimeout(() => resolve(foundFriends), 15000);
+      setTimeout(() => resolve(foundFriends), 60000);
     });
     
   } catch (error) {
