@@ -27,6 +27,23 @@
 
 console.log('[WebApp Sync] Content script loaded for CRM web app sync');
 
+// Read the per-page-load nonce from the <meta name="ext-sync-nonce"> tag injected by the
+// Blade layout.  Content scripts share the page's DOM (but not its JS globals), so reading
+// a meta tag works reliably — no script injection needed, no CSP issues.
+const _syncNonce = document.querySelector('meta[name="ext-sync-nonce"]')?.content || null;
+
+/**
+ * Post a message to the webapp with the security nonce included.
+ */
+function postToWebApp(type, payload) {
+  window.postMessage({
+    source: 'crm-extension-sync',
+    type,
+    payload,
+    nonce: _syncNonce
+  }, window.location.origin);
+}
+
 // Listen for messages from extension
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[WebApp Sync] Received message from extension:', message.type);
@@ -106,129 +123,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 function handleTagsFromExtension(tags) {
   console.log('[WebApp Sync] Handling tags from extension:', tags.length);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'SYNC_TAGS_FROM_EXTENSION',
-    payload: tags
-  }, window.location.origin);
+  postToWebApp('SYNC_TAGS_FROM_EXTENSION', tags);
 }
 
 function handleContactsFromExtension(contacts) {
   console.log('[WebApp Sync] Handling contacts from extension:', contacts.length);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'SYNC_CONTACTS_FROM_EXTENSION',
-    payload: contacts
-  }, window.location.origin);
+  postToWebApp('SYNC_CONTACTS_FROM_EXTENSION', contacts);
 }
 
 function handleTemplatesFromExtension(templates) {
   console.log('[WebApp Sync] Handling templates from extension:', templates.length);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'SYNC_TEMPLATES_FROM_EXTENSION',
-    payload: templates
-  }, window.location.origin);
+  postToWebApp('SYNC_TEMPLATES_FROM_EXTENSION', templates);
 }
 
 function handleFriendRequestsFromExtension(friendRequests) {
   console.log('[WebApp Sync] Handling friend requests from extension:', friendRequests.length);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'SYNC_FRIEND_REQUESTS_FROM_EXTENSION',
-    payload: friendRequests
-  }, window.location.origin);
+  postToWebApp('SYNC_FRIEND_REQUESTS_FROM_EXTENSION', friendRequests);
 }
 
 function handleFriendRequestTracked(friendRequest) {
   console.log('[WebApp Sync] Handling friend request tracked:', friendRequest.name);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'FRIEND_REQUEST_TRACKED',
-    payload: friendRequest
-  }, window.location.origin);
+  postToWebApp('FRIEND_REQUEST_TRACKED', friendRequest);
 }
 
 function handleFriendRequestStatusUpdated(data) {
   console.log('[WebApp Sync] Handling friend request status updated:', data);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'FRIEND_REQUEST_STATUS_UPDATED',
-    payload: data
-  }, window.location.origin);
+  postToWebApp('FRIEND_REQUEST_STATUS_UPDATED', data);
 }
 
 function handleFriendRequestStatusesUpdated(data) {
   console.log('[WebApp Sync] Handling friend request statuses updated:', data);
-
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'FRIEND_REQUEST_STATUSES_UPDATED',
-    payload: data
-  }, window.location.origin);
+  postToWebApp('FRIEND_REQUEST_STATUSES_UPDATED', data);
 }
 
 function handleBulkSendProgressUpdate(progress) {
-  console.log('[WebApp Sync] 🚨🚨🚨 PROGRESS UPDATE RECEIVED:', progress);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'BULK_SEND_PROGRESS_UPDATE',
-    payload: progress
-  }, window.location.origin);
-  
-  console.log('[WebApp Sync] ✅ Posted progress update to React app');
+  console.log('[WebApp Sync] Progress update received:', progress);
+  postToWebApp('BULK_SEND_PROGRESS_UPDATE', progress);
 }
 
 function handleBulkSendStarted(data) {
-  console.log('[WebApp Sync] 🚨🚨🚨 BULK SEND STARTED RECEIVED:', data);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'BULK_SEND_STARTED',
-    payload: data
-  }, window.location.origin);
-  
-  console.log('[WebApp Sync] ✅ Posted bulk send started to React app');
+  console.log('[WebApp Sync] Bulk send started received:', data);
+  postToWebApp('BULK_SEND_STARTED', data);
 }
 
 function handleBulkSendComplete(stats) {
   console.log('[WebApp Sync] Handling bulk send complete:', stats);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'BULK_SEND_COMPLETE',
-    payload: stats
-  }, window.location.origin);
+  postToWebApp('BULK_SEND_COMPLETE', stats);
 }
 
 function handleFriendRequestRefreshUpdate(refreshState) {
-  console.log('[WebApp Sync] 🚨🚨🚨 FRIEND REQUEST REFRESH UPDATE RECEIVED:', refreshState);
-  
-  // Send message to React app via postMessage
-  window.postMessage({
-    source: 'crm-extension-sync',
-    type: 'FRIEND_REQUEST_REFRESH_UPDATE',
-    payload: refreshState
-  }, window.location.origin);
-  
-  console.log('[WebApp Sync] ✅ Posted friend request refresh update to React app');
+  console.log('[WebApp Sync] Friend request refresh update received:', refreshState);
+  postToWebApp('FRIEND_REQUEST_REFRESH_UPDATE', refreshState);
 }
 
 // Also listen for window messages (alternative communication method)

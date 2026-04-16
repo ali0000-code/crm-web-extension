@@ -917,43 +917,46 @@ function renderTagList($container, tags) {
     });
     
     tags.forEach(tag => {
+        const safeColor = sanitizeColor(tag.color);
+        const safeId = escapeHtml(String(tag.id));
+        const safeName = escapeHtml(tag.name);
         const $tagRow = $('<label>', {
             css: {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
                 padding: '12px',
-                background: tag.color + '15',
+                background: safeColor + '15',
                 border: '2px solid transparent',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease'
             },
             html: `
-                <input type="checkbox" value="${tag.id}" style="
-                    accent-color: ${tag.color};
+                <input type="checkbox" value="${safeId}" style="
+                    accent-color: ${safeColor};
                     cursor: pointer;
                 ">
                 <div style="
-                    width: 12px; height: 12px; background: ${tag.color};
+                    width: 12px; height: 12px; background: ${safeColor};
                     border-radius: 3px; flex-shrink: 0;
                 "></div>
                 <span style="
                     flex: 1; font-weight: 500; color: #374151;
-                ">${tag.name}</span>
+                ">${safeName}</span>
             `
         });
-        
+
         // Add hover effect
         $tagRow.on('mouseenter', function() {
             $(this).css({
-                borderColor: tag.color + '40',
-                background: tag.color + '25'
+                borderColor: safeColor + '40',
+                background: safeColor + '25'
             });
         }).on('mouseleave', function() {
             $(this).css({
                 borderColor: 'transparent',
-                background: tag.color + '15'
+                background: safeColor + '15'
             });
         });
         
@@ -1464,6 +1467,14 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/**
+ * Validate a CSS color value — only allow hex colors.
+ * Returns a safe default if the value looks suspicious.
+ */
+function sanitizeColor(color) {
+    return /^#[0-9A-Fa-f]{3,8}$/.test(color) ? color : '#3f51b5';
 }
 
 /**

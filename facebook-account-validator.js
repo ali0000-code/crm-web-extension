@@ -115,7 +115,7 @@ const FacebookAccountValidator = {
       const data = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Validation request timed out')), 15000);
         chrome.runtime.sendMessage(
-          { action: 'validateFacebookAccount', facebookUserId, jwtToken },
+          { action: 'validateFacebookAccount', facebookUserId },
           (response) => {
             clearTimeout(timer);
             if (chrome.runtime.lastError) {

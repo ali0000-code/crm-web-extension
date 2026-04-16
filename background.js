@@ -153,10 +153,7 @@ async function syncBulkProgressToWebapp() {
     });
     
     // Filter to include webapp urls
-    const webappTabs = tabs.filter(tab => tab.url && (
-      tab.url.includes('localhost') ||
-      tab.url.includes('127.0.0.1')
-    ));
+    const webappTabs = tabs.filter(tab => tab.url);
     
     console.log('[Background] 🎯 Filtered webapp tabs for progress sync:', {
       webappTabsCount: webappTabs.length,
@@ -193,10 +190,7 @@ async function notifyWebappBulkSendStarted(data) {
       tabUrls: tabs.map(tab => ({ id: tab.id, url: tab.url }))
     });
     
-    const webappTabs = tabs.filter(tab => tab.url && (
-      tab.url.includes('localhost') ||
-      tab.url.includes('127.0.0.1')
-    ));
+    const webappTabs = tabs.filter(tab => tab.url);
     
     console.log('[Background] 🎯 Filtered webapp tabs for bulk send started notification:', {
       webappTabsCount: webappTabs.length,
@@ -225,10 +219,7 @@ async function notifyWebappBulkSendComplete(stats) {
   try {
     const tabs = await chrome.tabs.query({ url: CONFIG.WEB_APP_TAB_PATTERNS });
     
-    const webappTabs = tabs.filter(tab => tab.url && (
-      tab.url.includes('localhost') ||
-      tab.url.includes('127.0.0.1')
-    ));
+    const webappTabs = tabs.filter(tab => tab.url);
     
     for (const tab of webappTabs) {
       chrome.tabs.sendMessage(tab.id, {
@@ -281,10 +272,7 @@ async function syncFriendRequestProgressToWebapp() {
     });
     
     // Filter to include webapp urls
-    const webappTabs = tabs.filter(tab => tab.url && (
-      tab.url.includes('localhost') ||
-      tab.url.includes('127.0.0.1')
-    ));
+    const webappTabs = tabs.filter(tab => tab.url);
     
     console.log('[Background] 🎯 Filtered webapp tabs for friend request progress sync:', {
       webappTabsCount: webappTabs.length,
@@ -998,11 +986,7 @@ async function handleTrackFriendRequest(requestData, sendResponse) {
 
     // Notify webapp tabs about new friend request
     try {
-      const tabs = await chrome.tabs.query({ url: ['*://localhost/*'] });
-      const webappTabs = tabs.filter(tab => tab.url && (
-        tab.url.includes('localhost') ||
-        tab.url.includes('127.0.0.1')
-      ));
+      const webappTabs = await chrome.tabs.query({ url: CONFIG.WEB_APP_TAB_PATTERNS });
 
       if (webappTabs.length > 0) {
         console.log('[Background] Sending FRIEND_REQUEST_TRACKED to', webappTabs.length, 'webapp tabs');
@@ -1157,11 +1141,7 @@ async function handleUpdateFriendRequestStatus(userId, status, timestamp, sendRe
 
     // Notify webapp tabs about status update
     try {
-      const tabs = await chrome.tabs.query({ url: ['*://localhost/*'] });
-      const webappTabs = tabs.filter(tab => tab.url && (
-        tab.url.includes('localhost') ||
-        tab.url.includes('127.0.0.1')
-      ));
+      const webappTabs = await chrome.tabs.query({ url: CONFIG.WEB_APP_TAB_PATTERNS });
 
       if (webappTabs.length > 0) {
         console.log('[Background] 📤 Sending FRIEND_REQUEST_STATUS_UPDATED to', webappTabs.length, 'webapp tabs');
@@ -1468,7 +1448,7 @@ async function startFriendRequestRefresh() {
         }
 
         // Notify webapp about removals
-        const webappTabs = await chrome.tabs.query({ url: ['*://localhost/*'] });
+        const webappTabs = await chrome.tabs.query({ url: CONFIG.WEB_APP_TAB_PATTERNS });
         if (webappTabs.length > 0) {
           for (const req of cancelledRequests) {
             const syncPromises = webappTabs.map(tab =>
@@ -1884,7 +1864,7 @@ async function processFriendStatusResults(foundFriends, pendingRequests) {
         await chrome.storage.local.set({ contacts });
         
         // Sync everything to webapp
-        const webappTabs = await chrome.tabs.query({ url: ['*://localhost/*'] });
+        const webappTabs = await chrome.tabs.query({ url: CONFIG.WEB_APP_TAB_PATTERNS });
         if (webappTabs.length > 0) {
           console.log('[Background] 📤 Syncing updated data to', webappTabs.length, 'webapp tabs');
           
@@ -1913,7 +1893,7 @@ async function processFriendStatusResults(foundFriends, pendingRequests) {
     } else {
       // No accepted friends, just sync friend requests
       try {
-        const webappTabs = await chrome.tabs.query({ url: ['*://localhost/*'] });
+        const webappTabs = await chrome.tabs.query({ url: CONFIG.WEB_APP_TAB_PATTERNS });
         if (webappTabs.length > 0) {
           console.log('[Background] 📤 Syncing updated friend requests to', webappTabs.length, 'webapp tabs');
           await syncDataToWebAppTabs('SYNC_FRIEND_REQUESTS_FROM_EXTENSION', allRequests, webappTabs);
@@ -2884,6 +2864,11 @@ if (msg.action === 'checkFriendRequestStatuses') {
 
   // Handle Facebook account validation (route through background to avoid CORS)
   if (msg.action === 'validateFacebookAccount') {
+    // Validate facebookUserId is strictly numeric before using it
+    if (!msg.facebookUserId || !/^\d+$/.test(msg.facebookUserId)) {
+      sendResponse({ success: false, error: 'Invalid Facebook user ID', code: 'INVALID_ID' });
+      return true;
+    }
     console.log('[Background] Validating Facebook account:', msg.facebookUserId);
 
     const validateAccount = async () => {
@@ -2926,6 +2911,11 @@ if (msg.action === 'checkFriendRequestStatuses') {
 
   // Handle auto-link Facebook account
   if (msg.action === 'autoLinkFacebookAccount') {
+    // Validate facebookUserId is strictly numeric before using it in URL
+    if (!msg.facebookUserId || !/^\d+$/.test(msg.facebookUserId)) {
+      sendResponse({ success: false, error: 'Invalid Facebook user ID', code: 'INVALID_ID' });
+      return true;
+    }
     console.log('[Background] Auto-linking Facebook account:', msg.facebookUserId);
 
     const linkAccount = async () => {

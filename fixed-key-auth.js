@@ -292,38 +292,6 @@ class FixedJwtAuth {
       email: this.userEmail,
     };
   }
-
-  /**
-   * Legacy compatibility — getUserJwtToken was used to exchange Firebase token for JWT
-   * Now it's a no-op since we use direct login. Kept for files that might call it.
-   * @deprecated Use login() instead
-   */
-  async getUserJwtToken() {
-    console.warn('[Auth] getUserJwtToken() is deprecated. Use login() instead.');
-    if (this.isAuthenticated) {
-      return { token: this.token };
-    }
-    throw new Error('Not authenticated. Please log in with email and password.');
-  }
-
-  /**
-   * Legacy compatibility — validateAndRegisterDevice
-   * @deprecated Device is now registered during login
-   */
-  async validateAndRegisterDevice() {
-    console.warn('[Auth] validateAndRegisterDevice() is deprecated. Device registers at login.');
-    if (this.deviceId && this.userId) {
-      return {
-        userId: this.userId,
-        deviceId: this.deviceId,
-        deviceLimit: 4,
-      };
-    }
-    if (this.token) {
-      return await this.registerDevice();
-    }
-    throw new Error('Not authenticated');
-  }
 }
 
 // Create global instance

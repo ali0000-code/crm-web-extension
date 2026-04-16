@@ -488,12 +488,12 @@ async function loadAndDisplayNotes(contactUserId) {
     }
 
     container.innerHTML = notes.map(note => `
-      <div class="note-item" data-note-id="${note.id}">
+      <div class="note-item" data-note-id="${escapeHtml(note.id)}">
         <p class="note-text">${escapeHtml(note.text)}</p>
         <div class="note-meta">
           <div class="note-actions">
-            <button class="note-action-btn edit" data-note-id="${note.id}">Edit</button>
-            <button class="note-action-btn delete" data-note-id="${note.id}">Delete</button>
+            <button class="note-action-btn edit" data-note-id="${escapeHtml(note.id)}">Edit</button>
+            <button class="note-action-btn delete" data-note-id="${escapeHtml(note.id)}">Delete</button>
           </div>
         </div>
       </div>

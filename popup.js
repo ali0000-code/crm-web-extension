@@ -3911,7 +3911,8 @@ async function loadContactsWithNotes() {
   notesState.isLoading = true;
 
   try {
-    const token = window.fixedJwtAuth?.token;
+    let token;
+    try { token = window.fixedJwtAuth?.getJwtToken(); } catch (e) { token = null; }
     if (!token) {
       console.log('[Notes] No auth token available');
       displayNotesEmpty('Please log in to view notes');
@@ -4075,7 +4076,8 @@ async function loadNotesForContact(userId) {
   listEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-3);font-size:12px;">Loading notes...</div>';
 
   try {
-    const token = window.fixedJwtAuth?.token;
+    let token;
+    try { token = window.fixedJwtAuth?.getJwtToken(); } catch (e) { token = null; }
     if (!token) return;
 
     const response = await fetch(`${AUTH_CONFIG.API_BASE_URL}/notes/${userId}`, {
@@ -4160,7 +4162,7 @@ async function saveEditNote(noteId, newText) {
   if (!newText.trim()) return;
 
   try {
-    const token = window.fixedJwtAuth?.token;
+    const token = window.fixedJwtAuth?.getJwtToken();
     const response = await fetch(`${AUTH_CONFIG.API_BASE_URL}/notes/${notesDetailState.userId}/${noteId}`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -4187,7 +4189,7 @@ async function saveEditNote(noteId, newText) {
 
 async function deleteNoteFromPopup(noteId) {
   try {
-    const token = window.fixedJwtAuth?.token;
+    const token = window.fixedJwtAuth?.getJwtToken();
     const response = await fetch(`${AUTH_CONFIG.API_BASE_URL}/notes/${notesDetailState.userId}/${noteId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
@@ -4218,7 +4220,7 @@ async function addNoteFromPopup() {
   addBtn.disabled = true;
 
   try {
-    const token = window.fixedJwtAuth?.token;
+    const token = window.fixedJwtAuth?.getJwtToken();
     const response = await fetch(`${AUTH_CONFIG.API_BASE_URL}/notes`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },

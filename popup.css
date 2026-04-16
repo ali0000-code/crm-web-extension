@@ -3,7 +3,7 @@
    Dark operator aesthetic · Outfit + JetBrains Mono
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts are self-hosted via fonts/fonts.css (loaded before popup.css in popup.html) */
 
 /* ─── Variables ──────────────────────────────────────────── */
 :root {

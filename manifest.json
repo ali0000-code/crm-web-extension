@@ -36,7 +36,7 @@
       "run_at": "document_end"
     },
     {
-      "matches": ["https://www.facebook.com/*"],
+      "matches": ["https://www.facebook.com/groups/*"],
       "js": [
         "config.js",
         "jquery-3.7.1.min.js",
@@ -63,9 +63,7 @@
   
   "externally_connectable": {
     "matches": [
-      "http://localhost/*",
       "http://localhost:8000/*",
-      "http://127.0.0.1/*",
       "http://127.0.0.1:8000/*"
     ]
   }
