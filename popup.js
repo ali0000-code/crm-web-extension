@@ -1774,6 +1774,63 @@ function setupTemplateNavigation() {
    CONTACT MANAGEMENT FUNCTIONS
    =============================== */
 
+async function removeContactsBulk(ids) {
+    const CHUNK_SIZE = 50;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return { success: true, deleted: 0 };
+    }
+
+    const idSet = new Set(ids);
+    const removed = state.contacts.filter(c => idSet.has(c.id));
+    if (removed.length === 0) {
+        toast('No matching contacts found', false);
+        return { success: false, error: 'No matching contacts' };
+    }
+
+    let totalDeleted = 0;
+    try {
+        if (window.fixedJwtAuth?.token) {
+            for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+                const chunk = ids.slice(i, i + CHUNK_SIZE);
+                const resp = await fetch(`${AUTH_CONFIG.API_BASE_URL}/contacts/bulk-delete`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${window.fixedJwtAuth.token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ ids: chunk }),
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    console.warn('[Popup] Backend bulk delete failed:', data.error);
+                    throw new Error(data.error || 'Bulk delete failed');
+                }
+                totalDeleted += (typeof data.deleted === 'number' ? data.deleted : chunk.length);
+            }
+        }
+
+        state.contacts = state.contacts.filter(c => !idSet.has(c.id));
+
+        _suppressStorageListener = true;
+        await storageManager.saveBatch({
+            tags: state.tags,
+            contacts: state.contacts,
+            templates: state.templates,
+            currentTemplateIndex: state.currentTemplateIndex
+        }, { priority: 'high' });
+        setTimeout(() => { _suppressStorageListener = false; }, 500);
+
+        renderContacts();
+        renderTags();
+        toast(`Removed ${removed.length} contact${removed.length === 1 ? '' : 's'}`);
+        return { success: true, deleted: totalDeleted };
+    } catch (error) {
+        console.error('[Popup] removeContactsBulk failed:', error);
+        toast('Failed to remove contacts: ' + error.message, false);
+        return { success: false, error: error.message };
+    }
+}
+
 async function removeContact(id) {
     try {
         console.log('[Popup] Removing contact:', id);
@@ -3634,8 +3691,12 @@ function renderContacts() {
     if (removeBtn) {
         removeBtn.onclick = async () => {
             const ids = [...c.querySelectorAll('.rowCheck:checked')].map(cb => cb.closest('.contact').dataset.id);
-            for (const id of ids) {
-                await removeContact(id);
+            if (ids.length === 0) return;
+            removeBtn.disabled = true;
+            try {
+                await removeContactsBulk(ids);
+            } finally {
+                updateRemoveContactsBtn();
             }
         };
     }

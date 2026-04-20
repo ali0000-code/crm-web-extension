@@ -424,7 +424,9 @@ function checkScrollProgress() {
   );
   
   if (shouldContinue) {
-    loadAllState.maxScrollAttempts--;
+    if (!hasNewContacts) {
+      loadAllState.maxScrollAttempts--;
+    }
     const delay = hasNewContacts ? 2000 : 4000;
     setTimeout(performAdvancedScroll, delay);
   } else {
@@ -760,7 +762,7 @@ loadAllState = {
   startTime: Date.now(),
   lastScrollPosition: 0,
   noNewContentCount: 0,
-  maxScrollAttempts: 15, // Reduced from 30
+  maxScrollAttempts: 20, // counts only unproductive scrolls
   stuckCount: 0,
   lastContactCount: initialCount,
   memberLimit: limit
