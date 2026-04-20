@@ -1105,30 +1105,43 @@ const eligibleForRequest = Array.from(window.selectedGroupMembers).filter(member
 }
 
 function handleSelectAll() {
-  const $checkboxes = $(SELECTORS.GROUPS_CRM_CHECKBOX);
-  const allChecked = $checkboxes.length > 0 && $checkboxes.filter(':checked').length === $checkboxes.length;
-  
-  $checkboxes.each(function() {
-    const $cb = $(this);
-    if (allChecked) {
-      $cb.prop('checked', false);
-      const memberData = $cb.data('memberObject');
-      if (memberData) {
-        window.selectedGroupMembers.forEach(item => {
-          if (typeof item === 'object' && item.userId === memberData.userId) {
-            window.selectedGroupMembers.delete(item);
-          }
-        });
-      }
-    } else {
-      $cb.prop('checked', true);
-      const memberData = $cb.data('memberObject');
-      if (memberData) {
-        window.selectedGroupMembers.add(memberData);
-      }
+  // Native DOM path — jQuery .each + inner Set scans are O(N²) and freeze
+  // the UI at 3000+ members. Here we: (1) toggle all boxes in a tight loop,
+  // (2) rebuild selection via Set-diff instead of nested iteration.
+  const boxes = document.querySelectorAll(SELECTORS.GROUPS_CRM_CHECKBOX);
+  const total = boxes.length;
+  if (total === 0) return;
+
+  let checkedCount = 0;
+  for (const cb of boxes) if (cb.checked) checkedCount++;
+  const allChecked = checkedCount === total;
+  const shouldCheck = !allChecked;
+
+  // IDs currently tracked by on-page checkboxes.
+  const pageUserIds = new Set();
+  for (const cb of boxes) {
+    const m = $.data(cb, 'memberObject');
+    if (m?.userId) pageUserIds.add(m.userId);
+  }
+
+  if (shouldCheck) {
+    for (const cb of boxes) {
+      cb.checked = true;
+      const m = $.data(cb, 'memberObject');
+      if (m) window.selectedGroupMembers.add(m);
     }
-  });
-  
+  } else {
+    for (const cb of boxes) cb.checked = false;
+    // Drop only this-page members from the selection (preserve anything
+    // tracked from previous loads/sessions).
+    const keep = [];
+    window.selectedGroupMembers.forEach(m => {
+      if (!pageUserIds.has(m?.userId)) keep.push(m);
+    });
+    window.selectedGroupMembers.clear();
+    for (const m of keep) window.selectedGroupMembers.add(m);
+  }
+
   updateButtons();
 }
 

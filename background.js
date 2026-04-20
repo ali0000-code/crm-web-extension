@@ -3301,7 +3301,12 @@ async function handleDataChangeSync(data) {
         const syncPromises = [];
 
         if (data.contacts) {
-            syncPromises.push(syncDataToWebAppTabs('SYNC_CONTACTS_FROM_EXTENSION', data.contacts, webappTabs));
+            // Wrap the array so we can attach an `alreadySynced` hint. The
+            // webapp handler accepts both shapes (`payload.contacts || payload`).
+            const contactsPayload = data._contactsAlreadySynced
+                ? { contacts: data.contacts, alreadySynced: true }
+                : data.contacts;
+            syncPromises.push(syncDataToWebAppTabs('SYNC_CONTACTS_FROM_EXTENSION', contactsPayload, webappTabs));
         }
 
         if (data.templates) {
@@ -3406,6 +3411,30 @@ async function handleCreateTag(tagData, sendResponse) {
    contacts into storage, deduplicates by userId/name, preserves
    existing tags.
 */
+// Trim/normalise a local contact into the shape the Laravel /contacts/sync
+// validator expects, so one stale or odd field doesn't reject the whole batch.
+function sanitizeContactForSync(c) {
+  const clamp = (v, n) => (typeof v === 'string' && v.length > n ? v.slice(0, n) : v);
+  const cleanPic = (p) => {
+    if (p == null) return null;
+    if (typeof p !== 'string') return null;
+    const s = p.trim();
+    if (!s || s === 'null' || s === 'undefined') return null;
+    return clamp(s, 2000);
+  };
+  return {
+    id: String(c.id || ''),
+    name: clamp(String(c.name || 'Unknown'), 200),
+    profilePicture: cleanPic(c.profilePicture),
+    userId: c.userId ? clamp(String(c.userId), 200) : null,
+    source: c.source ? clamp(String(c.source), 50) : null,
+    groupId: c.groupId ? clamp(String(c.groupId), 200) : null,
+    tags: Array.isArray(c.tags)
+      ? c.tags.map(t => (typeof t === 'object' && t !== null ? t.id : t)).filter(Boolean).slice(0, 100)
+      : [],
+  };
+}
+
 async function handleSaveContactsToTags(msg, sendResponse) {
   console.log('[Background] Starting save operation for contacts:', msg.contacts.length);
   console.log('[Background] New contacts data:', msg.contacts);
@@ -3422,20 +3451,25 @@ async function handleSaveContactsToTags(msg, sendResponse) {
     console.log('[Background] Existing contacts count:', contacts.length);
     console.log('[Background] Available tags:', tags.map(t => ({ id: t.id, name: t.name })));
 
-    // Process contacts
+    // Build O(1) lookup maps once. `contacts.find()` per newContact was
+    // O(N²) and froze the worker at 3000 members. Also: the per-contact
+    // console.log noise is skipped in the bulk path — re-enable only for
+    // small saves where debug info is actually useful.
+    const byUserId = new Map();
+    const byName = new Map();
+    for (const c of contacts) {
+      if (c.userId) byUserId.set(c.userId, c);
+      else if (c.name) byName.set(c.name, c);
+    }
+    const verbose = newContacts.length <= 25;
+
     for (const newContact of newContacts) {
-      console.log('[Background] Processing contact:', newContact);
+      if (verbose) console.log('[Background] Processing contact:', newContact);
 
-      let existing = contacts.find(
-        c => (newContact.userId && c.userId === newContact.userId) ||
-        (newContact.name && c.name === newContact.name)
-      );
-
-      // Additional debugging for contact matching
-      if (!existing && newContact.userId) {
-        console.log('[Background] No exact match found, checking all contacts with userId:',
-          contacts.filter(c => c.userId).map(c => ({ name: c.name, userId: c.userId })));
-      }
+      let existing =
+        (newContact.userId && byUserId.get(newContact.userId)) ||
+        (newContact.name && byName.get(newContact.name)) ||
+        null;
 
       if (existing) {
         // Normalize existing tags to plain string IDs (may contain objects from webapp sync)
@@ -3444,7 +3478,6 @@ async function handleSaveContactsToTags(msg, sendResponse) {
         } else {
           existing.tags = [];
         }
-        console.log('[Background] Found existing contact:', existing.name, 'with current tags:', existing.tags);
 
         if (newContact.profilePicture && newContact.profilePicture !== 'null') {
           existing.profilePicture = newContact.profilePicture;
@@ -3454,16 +3487,9 @@ async function handleSaveContactsToTags(msg, sendResponse) {
           existing.groupId = newContact.groupId;
         }
         // Add tags without duplicates
-        tagIds.forEach(tagId => {
-          if (!existing.tags.includes(tagId)) {
-            existing.tags.push(tagId);
-            console.log('[Background] Added tag', tagId, 'to existing contact', existing.name);
-          } else {
-            console.log('[Background] Tag', tagId, 'already exists for contact', existing.name);
-          }
-        });
-
-        console.log('[Background] Updated existing contact tags:', existing.tags);
+        const tagSet = new Set(existing.tags);
+        for (const tagId of tagIds) tagSet.add(tagId);
+        existing.tags = [...tagSet];
       } else {
         const newContactData = {
           id: generateId(),
@@ -3475,8 +3501,11 @@ async function handleSaveContactsToTags(msg, sendResponse) {
           tags: [...tagIds]
         };
 
-        console.log('[Background] Creating new contact:', newContactData);
         contacts.push(newContactData);
+        // Keep the maps in sync so later duplicates in the same batch hit
+        // the updated record instead of creating yet another copy.
+        if (newContactData.userId) byUserId.set(newContactData.userId, newContactData);
+        else if (newContactData.name) byName.set(newContactData.name, newContactData);
       }
     }
 
@@ -3492,14 +3521,6 @@ async function handleSaveContactsToTags(msg, sendResponse) {
       newCount: newContacts.length
     });
 
-    // Debug: Show contacts with their tags
-    const contactsWithTags = contacts.filter(c => c.tags && c.tags.length > 0);
-    console.log('[Background] Contacts with tags after save:', contactsWithTags.map(c => ({
-      name: c.name,
-      userId: c.userId,
-      tags: c.tags
-    })));
-
     // Send success response
     sendResponse({
       success: true,
@@ -3507,7 +3528,10 @@ async function handleSaveContactsToTags(msg, sendResponse) {
       totalContacts: contacts.length
     });
 
-    // Sync directly to backend API (works even if webapp is closed)
+    // Sync directly to backend API (works even if webapp is closed).
+    // Track whether the push actually landed so the webapp can skip its
+    // redundant re-POST and just refresh.
+    let contactsSyncedToBackend = false;
     try {
       const tokenResult = await chrome.storage.local.get(['crmFixedJwtToken']);
       const token = tokenResult.crmFixedJwtToken;
@@ -3523,19 +3547,29 @@ async function handleSaveContactsToTags(msg, sendResponse) {
             method: 'POST', headers,
             body: JSON.stringify({ tags }),
           });
-          await tagResp.json();
+          if (!tagResp.ok) {
+            const body = await tagResp.text().catch(() => '');
+            console.error('[Background] ❌ /tags/sync rejected', tagResp.status, body.slice(0, 500));
+          }
         }
         // Then contacts (tags now exist in backend)
         if (contacts.length > 0) {
-          await fetch(`${CONFIG.API_BASE_URL}/contacts/sync`, {
+          const safeContacts = contacts.map(sanitizeContactForSync);
+          const contactResp = await fetch(`${CONFIG.API_BASE_URL}/contacts/sync`, {
             method: 'POST', headers,
-            body: JSON.stringify({ contacts }),
+            body: JSON.stringify({ contacts: safeContacts }),
           });
+          if (!contactResp.ok) {
+            const body = await contactResp.text().catch(() => '');
+            console.error('[Background] ❌ /contacts/sync rejected', contactResp.status, body.slice(0, 500));
+          } else {
+            contactsSyncedToBackend = true;
+            console.log('[Background] Backend sync completed after saveContactsToTags');
+          }
         }
-        console.log('[Background] Backend sync completed after saveContactsToTags');
       }
     } catch (err) {
-      console.warn('[Background] Backend sync failed:', err.message);
+      console.error('[Background] Backend sync failed:', err.message, err);
     }
 
     // Also sync to open webapp tabs for live updates
@@ -3543,7 +3577,8 @@ async function handleSaveContactsToTags(msg, sendResponse) {
     await handleDataChangeSync({
       contacts: contacts,
       tags: tags,
-      friendRequests: friendRequestsResult.friendRequests || []
+      friendRequests: friendRequestsResult.friendRequests || [],
+      _contactsAlreadySynced: contactsSyncedToBackend,
     });
 
     // Try to notify popup if it's open
