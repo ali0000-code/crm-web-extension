@@ -510,13 +510,13 @@ function showMemberLimitModal(callback) {
           <label for="member-limit-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: #555;">
             Member Limit (optional):
           </label>
-          <input type="number" id="member-limit-input" placeholder="Enter limit or leave empty for all" 
-                 min="1" max="10000" style="
+          <input type="number" id="member-limit-input" placeholder="Enter limit (max 3000)"
+                 min="1" max="3000" style="
             width: 100%; padding: 10px 12px; border: 2px solid #ddd;
             border-radius: 6px; font-size: 14px; box-sizing: border-box;
           ">
           <div style="margin-top: 8px; font-size: 12px; color: #666;">
-            Leave empty to load all available members, or enter a number to stop at that limit.
+            Leave empty to load up to 3000 members, or enter a lower number to stop sooner.
           </div>
         </div>
         <div style="display: flex; gap: 12px;">
@@ -562,10 +562,15 @@ function showMemberLimitModal(callback) {
     e.stopPropagation();
 
     const limitValue = $(SELECTORS.LIMIT_INPUT).val().trim();
-    const limit = limitValue ? parseInt(limitValue, 10) : null;
-    
-    if (limit && (limit < 1 || limit > 10000)) {
-      alert('Please enter a limit between 1 and 10,000');
+    // Empty input now defaults to the hard cap (3000) instead of unlimited.
+    const LOAD_ALL_MAX = 3000;
+    let limit = limitValue ? parseInt(limitValue, 10) : LOAD_ALL_MAX;
+
+    if (!limitValue || isNaN(limit)) {
+      limit = LOAD_ALL_MAX;
+    }
+    if (limit < 1 || limit > LOAD_ALL_MAX) {
+      alert(`Please enter a limit between 1 and ${LOAD_ALL_MAX}`);
       return;
     }
     

@@ -432,6 +432,7 @@ async function sendSequentially(users, template, delaySec, batchSize = 0, batchW
     bulkSendProgress.currentIndex = i + 1;
 
     const personalMsg = fillTemplate(template, user);
+    let hitRateLimit = false;
     try {
       // Pass the entire contact object instead of just userId
       await sendToUser(user, personalMsg);
@@ -440,9 +441,22 @@ async function sendSequentially(users, template, delaySec, batchSize = 0, batchW
     } catch (error) {
       bulkSendProgress.failureCount++;
       console.error(`[Background] ❌ Failed for ${user.name}`, error);
+      if (error && error.rateLimited) {
+        hitRateLimit = true;
+      }
     }
 
     notifyProgress();
+
+    // Facebook 24h message-request cap hit — stop the whole campaign,
+    // further sends will only rack up failures and risk an account flag.
+    if (hitRateLimit) {
+      console.warn('[Background] 🛑 Rate limit detected — aborting bulk send');
+      bulkSendProgress.cancelled = true;
+      bulkSendProgress.isActive = false;
+      bulkSendProgress.rateLimited = true;
+      break;
+    }
 
     // Sync progress to backend every 10 messages (for extension-initiated campaigns)
     if (campaignId && bulkSendProgress.currentIndex % 10 === 0) {
@@ -503,7 +517,8 @@ async function sendSequentially(users, template, delaySec, batchSize = 0, batchW
     success: bulkSendProgress.successCount,
     failed: bulkSendProgress.failureCount,
     duration: Date.now() - bulkSendProgress.startTime,
-    cancelled: wasCancelled
+    cancelled: wasCancelled,
+    rateLimited: !!bulkSendProgress.rateLimited,
   };
   
   // Notify popup
@@ -580,7 +595,24 @@ async function sendToUser(contact, text) {
   });
 
   await sleep(20000);
+
+  // Read the outcome flag set by the in-page script (e.g. rate_limit).
+  let sendResult = null;
+  try {
+    const [{ result } = {}] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => window.crmSendResult || null,
+    });
+    sendResult = result;
+  } catch (_) { /* tab may have closed — ignore */ }
+
   chrome.tabs.remove(tab.id).catch(() => {});
+
+  if (sendResult === 'rate_limit') {
+    const err = new Error("Facebook message request limit reached");
+    err.rateLimited = true;
+    throw err;
+  }
 }
 
 /* ===============================
@@ -599,6 +631,7 @@ function realSendBackground(rawText, executionId, userId) {
     return;
   }
   window.crmActiveExecution = executionId;
+  window.crmSendResult = null;
 
   const TIMEOUT = 20000;
   const start = Date.now();
@@ -606,6 +639,22 @@ function realSendBackground(rawText, executionId, userId) {
   const cleanup = (reason) => {
     console.log(`[CRM Send] Done (${reason}) — exec: ${executionId}`);
     if (window.crmActiveExecution === executionId) window.crmActiveExecution = null;
+  };
+
+  // Facebook surfaces a "You've reached the message request limit" banner when
+  // non-friend message requests are throttled (24h limit). Detect it early so
+  // the bulk send can abort instead of burning through the contact list.
+  const detectRateLimit = () => {
+    try {
+      const text = document.body?.innerText || '';
+      if (/reached the message request limit/i.test(text) ||
+          /limit to how many requests you can send/i.test(text)) {
+        console.warn('[CRM Send] 🚫 Message request limit banner detected');
+        window.crmSendResult = 'rate_limit';
+        return true;
+      }
+    } catch (_) {}
+    return false;
   };
 
   const simulateRealClick = (element) => {
@@ -628,6 +677,11 @@ function realSendBackground(rawText, executionId, userId) {
     if (Date.now() - start > TIMEOUT) {
       console.warn(`[CRM Send] Timeout waiting for message input`);
       cleanup('timeout');
+      return;
+    }
+
+    if (detectRateLimit()) {
+      cleanup('rate_limit');
       return;
     }
 
@@ -3150,7 +3204,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       } : 'No payload'
     });
 
-    const { recipients, template, delaySec, batchSize, batchWaitMinutes } = msg.payload;
+    const { recipients, template, delaySec, batchSize, batchWaitMinutes, campaignId } = msg.payload;
     if (bulkSendProgress.isActive) {
       console.log('❌ [Background] Bulk send already running');
       sendResponse({ status: 'error', message: 'Already running' });
@@ -3159,9 +3213,10 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     console.log('✅ [Background] Starting external bulk send process...', {
       count: recipients.length,
       batchSize: batchSize || 0,
-      batchWaitMinutes: batchWaitMinutes || 0
+      batchWaitMinutes: batchWaitMinutes || 0,
+      campaignId: campaignId || null
     });
-    sendSequentially(recipients, template, delaySec, batchSize, batchWaitMinutes);
+    sendSequentially(recipients, template, delaySec, batchSize, batchWaitMinutes, campaignId || null);
     const response = { status: 'started', count: recipients.length };
     console.log('📤 [Background] Sending response back to webapp:', response);
     sendResponse(response);
