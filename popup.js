@@ -1509,6 +1509,11 @@ async function addTag(name, color) {
             return { success: false, error: 'Missing required fields' };
         }
 
+        if (name.trim().length > 50) {
+            toast('Tag name must be 50 characters or less', false);
+            return { success: false, error: 'Tag name too long' };
+        }
+
         const duplicate = state.tags.find(t => t.name.toLowerCase() === name.trim().toLowerCase());
         if (duplicate) {
             toast('Tag already exists', false);
@@ -1621,7 +1626,17 @@ async function saveTemplate() {
             toast('Template message is required', false);
             return;
         }
-        
+
+        if (name.length > 50) {
+            toast('Template name must be 50 characters or less', false);
+            return;
+        }
+
+        if (body.length > 3000) {
+            toast('Template message must be 3000 characters or less', false);
+            return;
+        }
+
         // Update current template or create new one
         if (state.currentTemplateIndex < state.templates.length) {
             // Update existing
