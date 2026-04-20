@@ -54,6 +54,14 @@ const state = {
 
 let searchTerm = '';
 
+// Client-side pagination for the contacts list (matches webapp's 50/page).
+const CONTACTS_PER_PAGE = 50;
+let contactsPage = 1;
+
+// Selection persists across pages / filter changes until the user explicitly
+// removes, clears, or reloads. Rendering restores checkbox state from this set.
+const selectedContactIds = new Set();
+
 /* ===============================
    UTILITY FUNCTIONS
    =============================== */
@@ -3607,6 +3615,7 @@ function renderTags() {
 
 function selectTag(id) {
     state.selectedTagId = id;
+    contactsPage = 1;
     renderTags();
     renderContacts();
 }
@@ -3639,28 +3648,45 @@ function renderContacts() {
         return;
     }
 
+    // Clamp current page to the valid range after filters shrink the list.
+    const totalPages = Math.max(1, Math.ceil(list.length / CONTACTS_PER_PAGE));
+    if (contactsPage > totalPages) contactsPage = totalPages;
+    if (contactsPage < 1) contactsPage = 1;
+    const startIdx = (contactsPage - 1) * CONTACTS_PER_PAGE;
+    const pageItems = list.slice(startIdx, startIdx + CONTACTS_PER_PAGE);
+
+    // Prune selected IDs that no longer exist in the full (unfiltered) contact set
+    // so the count doesn't lie after a sync/delete.
+    const knownIds = new Set(state.contacts.map(ct => ct.id));
+    for (const id of selectedContactIds) {
+        if (!knownIds.has(id)) selectedContactIds.delete(id);
+    }
+
     // Render header row with All/Remove inside the content container (same pattern as tags)
     const headerRow = document.createElement('div');
     headerRow.className = 'contactHeaderRow';
     headerRow.innerHTML = `
         <span>Contacts</span>
+        <span id="contactsSelectedCount" style="margin-left:8px;font-size:11px;color:#8b5cf6;font-weight:600;">${selectedContactIds.size} selected</span>
         <div class="headerActions">
-            <button id="selectAllContactsBtn" title="Select / deselect all">All</button>
-            <button id="removeSelContactsBtn" title="Remove selected" disabled>Remove</button>
+            <button id="selectAllContactsBtn" title="Select / deselect page">All</button>
+            <button id="clearSelContactsBtn" title="Clear all selections" ${selectedContactIds.size === 0 ? 'disabled' : ''}>Clear</button>
+            <button id="removeSelContactsBtn" title="Remove selected" ${selectedContactIds.size === 0 ? 'disabled' : ''}>Remove</button>
         </div>`;
     c.appendChild(headerRow);
 
-    list.forEach(ct => {
+    pageItems.forEach(ct => {
         const d = document.createElement('div');
         d.className = 'contact';
         d.dataset.id = ct.id;
-        
+
         const profileImageSrc = ct.profilePicture && ct.profilePicture !== 'null' && ct.profilePicture.trim() !== ''
-            ? ct.profilePicture 
+            ? ct.profilePicture
             : `https://i.pravatar.cc/36?u=${ct.id}`;
-        
+
+        const isChecked = selectedContactIds.has(ct.id) ? 'checked' : '';
         d.innerHTML = `
-            <input type="checkbox" class="rowCheck">
+            <input type="checkbox" class="rowCheck" ${isChecked}>
             <img src="${escapeHtml(profileImageSrc)}"
                  data-fallback="https://i.pravatar.cc/36?u=${escapeHtml(ct.id)}"
                  alt="${escapeHtml(ct.name)}"
@@ -3676,40 +3702,125 @@ function renderContacts() {
         c.appendChild(d);
     });
 
+    // Pagination footer (shown only when there's more than one page)
+    if (totalPages > 1) {
+        // Build a compact page list: first, last, current ± 1, with ellipses.
+        const pageNumbers = (() => {
+            const pages = new Set([1, totalPages, contactsPage, contactsPage - 1, contactsPage + 1]);
+            const sorted = [...pages].filter(p => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+            const out = [];
+            for (let i = 0; i < sorted.length; i++) {
+                if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push('…');
+                out.push(sorted[i]);
+            }
+            return out;
+        })();
+
+        const btnStyle = 'padding:3px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;min-width:26px;';
+        const disabledStyle = 'opacity:.5;cursor:not-allowed;';
+        const activeStyle = 'background:#8b5cf6;color:#fff;border-color:#8b5cf6;font-weight:600;';
+
+        const pageBtnsHtml = pageNumbers.map(p => {
+            if (p === '…') return `<span style="padding:0 2px;color:#999;">…</span>`;
+            const active = p === contactsPage;
+            return `<button class="contactsPageBtn" data-page="${p}" ${active ? 'disabled' : ''} style="${btnStyle}${active ? activeStyle : ''}">${p}</button>`;
+        }).join('');
+
+        const footer = document.createElement('div');
+        footer.className = 'contactPagination';
+        footer.style.cssText = 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 10px;gap:6px;font-size:12px;color:#555;border-top:1px solid #eee;background:#fafafa;';
+        footer.innerHTML = `
+            <button id="contactsPrevBtn" ${contactsPage <= 1 ? 'disabled' : ''} style="${btnStyle}${contactsPage <= 1 ? disabledStyle : ''}">Prev</button>
+            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${pageBtnsHtml}</div>
+            <button id="contactsNextBtn" ${contactsPage >= totalPages ? 'disabled' : ''} style="${btnStyle}${contactsPage >= totalPages ? disabledStyle : ''}">Next</button>
+            <span style="flex-basis:100%;text-align:center;color:#999;">${list.length} total</span>
+        `;
+        c.appendChild(footer);
+
+        const goTo = (p) => {
+            const target = Math.max(1, Math.min(totalPages, p));
+            if (target === contactsPage) return;
+            contactsPage = target;
+            renderContacts();
+            c.scrollTop = 0;
+        };
+
+        const prevBtn = $('contactsPrevBtn');
+        const nextBtn = $('contactsNextBtn');
+        if (prevBtn) prevBtn.onclick = () => goTo(contactsPage - 1);
+        if (nextBtn) nextBtn.onclick = () => goTo(contactsPage + 1);
+        footer.querySelectorAll('.contactsPageBtn').forEach(btn => {
+            btn.onclick = () => goTo(parseInt(btn.dataset.page, 10));
+        });
+    }
+
     const selectAllBtn = $('selectAllContactsBtn');
+    const clearBtn = $('clearSelContactsBtn');
     const removeBtn = $('removeSelContactsBtn');
-    
+    const countEl = $('contactsSelectedCount');
+
+    const refreshSelectionUI = () => {
+        if (countEl) countEl.textContent = `${selectedContactIds.size} selected`;
+        if (clearBtn) clearBtn.disabled = selectedContactIds.size === 0;
+        if (removeBtn) removeBtn.disabled = selectedContactIds.size === 0;
+        // Keep the "All" label meaningful: show page-level state.
+        if (selectAllBtn) {
+            const pageIds = pageItems.map(p => p.id);
+            const allOnPage = pageIds.length > 0 && pageIds.every(id => selectedContactIds.has(id));
+            selectAllBtn.textContent = allOnPage ? 'None' : 'All';
+        }
+    };
+
+    // Per-row checkbox syncs into the persistent Set.
+    c.addEventListener('change', (e) => {
+        const cb = e.target.closest?.('.rowCheck');
+        if (!cb) return;
+        const row = cb.closest('.contact');
+        if (!row) return;
+        const id = row.dataset.id;
+        if (cb.checked) selectedContactIds.add(id);
+        else selectedContactIds.delete(id);
+        refreshSelectionUI();
+    });
+
     if (selectAllBtn) {
         selectAllBtn.onclick = () => {
-            const boxes = c.querySelectorAll('.rowCheck');
-            const allOn = [...boxes].every(cb => cb.checked);
-            boxes.forEach(cb => cb.checked = !allOn);
-            updateRemoveContactsBtn();
+            const pageIds = pageItems.map(p => p.id);
+            const allOnPage = pageIds.length > 0 && pageIds.every(id => selectedContactIds.has(id));
+            if (allOnPage) pageIds.forEach(id => selectedContactIds.delete(id));
+            else pageIds.forEach(id => selectedContactIds.add(id));
+            // Reflect in the DOM without a full re-render.
+            c.querySelectorAll('.rowCheck').forEach(cb => {
+                const row = cb.closest('.contact');
+                if (row) cb.checked = selectedContactIds.has(row.dataset.id);
+            });
+            refreshSelectionUI();
         };
     }
-    
+
+    if (clearBtn) {
+        clearBtn.onclick = () => {
+            selectedContactIds.clear();
+            c.querySelectorAll('.rowCheck').forEach(cb => { cb.checked = false; });
+            refreshSelectionUI();
+        };
+    }
+
     if (removeBtn) {
         removeBtn.onclick = async () => {
-            const ids = [...c.querySelectorAll('.rowCheck:checked')].map(cb => cb.closest('.contact').dataset.id);
+            const ids = [...selectedContactIds];
             if (ids.length === 0) return;
             removeBtn.disabled = true;
             try {
                 await removeContactsBulk(ids);
+                selectedContactIds.clear();
             } finally {
-                updateRemoveContactsBtn();
+                refreshSelectionUI();
             }
         };
     }
-    
-    c.addEventListener('change', () => updateRemoveContactsBtn());
-    updateRemoveContactsBtn();
 
-    function updateRemoveContactsBtn() {
-        const removeBtn = $('removeSelContactsBtn');
-        if (removeBtn) {
-            removeBtn.disabled = !c.querySelector('.rowCheck:checked');
-        }
-    }
+    refreshSelectionUI();
 }
 
 function updateTemplateUI() {
@@ -3765,6 +3876,7 @@ function setupEventListeners() {
     // Search functionality
     const debouncedSearch = debounce((term) => {
         searchTerm = term.toLowerCase();
+        contactsPage = 1;
         renderTags();
         renderContacts();
     }, 300);
