@@ -88,6 +88,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true, type: 'friendRequestStatusesUpdated' });
         break;
 
+      case 'FRIEND_REQUEST_REMOVED':
+        handleFriendRequestRemoved(message.payload);
+        sendResponse({ success: true, type: 'friendRequestRemoved' });
+        break;
+
       case 'BULK_SEND_PROGRESS_UPDATE':
         handleBulkSendProgressUpdate(message.payload);
         sendResponse({ success: true, type: 'bulkSendProgressUpdate' });
@@ -156,6 +161,11 @@ function handleFriendRequestStatusesUpdated(data) {
   postToWebApp('FRIEND_REQUEST_STATUSES_UPDATED', data);
 }
 
+function handleFriendRequestRemoved(data) {
+  console.log('[WebApp Sync] Handling friend request removed:', data);
+  postToWebApp('FRIEND_REQUEST_REMOVED', data);
+}
+
 function handleBulkSendProgressUpdate(progress) {
   console.log('[WebApp Sync] Progress update received:', progress);
   postToWebApp('BULK_SEND_PROGRESS_UPDATE', progress);
@@ -206,6 +216,9 @@ window.addEventListener('message', (event) => {
         break;
       case 'FRIEND_REQUEST_STATUSES_UPDATED':
         handleFriendRequestStatusesUpdated(payload);
+        break;
+      case 'FRIEND_REQUEST_REMOVED':
+        handleFriendRequestRemoved(payload);
         break;
       case 'BULK_SEND_PROGRESS_UPDATE':
         handleBulkSendProgressUpdate(payload);

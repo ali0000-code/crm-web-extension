@@ -58,8 +58,9 @@ let searchTerm = '';
 const CONTACTS_PER_PAGE = 50;
 let contactsPage = 1;
 
-// Selection persists across pages / filter changes until the user explicitly
-// removes, clears, or reloads. Rendering restores checkbox state from this set.
+// Selection is cleared on page change, tag filter change, and search so
+// users never act on invisible rows. Rendering restores checkbox state
+// from this set for the currently-visible page.
 const selectedContactIds = new Set();
 
 /* ===============================
@@ -1702,11 +1703,11 @@ async function deleteTemplate() {
     }
 }
 
-function loadTemplate(idx) {
+async function loadTemplate(idx) {
     if (idx >= 0 && idx < state.templates.length) {
         state.currentTemplateIndex = idx;
         updateTemplateUI();
-        saveState();
+        await saveState();
     }
 }
 
@@ -1796,46 +1797,63 @@ async function removeContactsBulk(ids) {
     }
 
     let totalDeleted = 0;
+    const succeededIds = new Set();
+    let chunkError = null;
     try {
         if (window.fixedJwtAuth?.token) {
             for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
                 const chunk = ids.slice(i, i + CHUNK_SIZE);
-                const resp = await fetch(`${AUTH_CONFIG.API_BASE_URL}/contacts/bulk-delete`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${window.fixedJwtAuth.token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ ids: chunk }),
-                });
-                const data = await resp.json();
-                if (!data.success) {
-                    console.warn('[Popup] Backend bulk delete failed:', data.error);
-                    throw new Error(data.error || 'Bulk delete failed');
+                try {
+                    const resp = await fetch(`${AUTH_CONFIG.API_BASE_URL}/contacts/bulk-delete`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${window.fixedJwtAuth.token}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ ids: chunk }),
+                    });
+                    const data = await resp.json();
+                    if (!data.success) {
+                        throw new Error(data.error || 'Bulk delete failed');
+                    }
+                    totalDeleted += (typeof data.deleted === 'number' ? data.deleted : chunk.length);
+                    for (const id of chunk) succeededIds.add(id);
+                } catch (err) {
+                    chunkError = err;
+                    break;
                 }
-                totalDeleted += (typeof data.deleted === 'number' ? data.deleted : chunk.length);
             }
+        } else {
+            for (const id of ids) succeededIds.add(id);
         }
 
-        state.contacts = state.contacts.filter(c => !idSet.has(c.id));
+        if (succeededIds.size > 0) {
+            state.contacts = state.contacts.filter(c => !succeededIds.has(c.id));
 
-        _suppressStorageListener = true;
-        await storageManager.saveBatch({
-            tags: state.tags,
-            contacts: state.contacts,
-            templates: state.templates,
-            currentTemplateIndex: state.currentTemplateIndex
-        }, { priority: 'high' });
-        setTimeout(() => { _suppressStorageListener = false; }, 500);
+            _suppressStorageListener = true;
+            await storageManager.saveBatch({
+                tags: state.tags,
+                contacts: state.contacts,
+                templates: state.templates,
+                currentTemplateIndex: state.currentTemplateIndex
+            }, { priority: 'high' });
+            setTimeout(() => { _suppressStorageListener = false; }, 500);
 
-        renderContacts();
-        renderTags();
+            renderContacts();
+            renderTags();
+        }
+
+        if (chunkError) {
+            toast(`Removed ${succeededIds.size}/${ids.length} contacts. Error: ${chunkError.message}`, false);
+            return { success: false, deleted: totalDeleted, error: chunkError.message };
+        }
+
         toast(`Removed ${removed.length} contact${removed.length === 1 ? '' : 's'}`);
         return { success: true, deleted: totalDeleted };
     } catch (error) {
         console.error('[Popup] removeContactsBulk failed:', error);
         toast('Failed to remove contacts: ' + error.message, false);
-        return { success: false, error: error.message };
+        return { success: false, error: error.message, deleted: totalDeleted };
     }
 }
 
@@ -3251,7 +3269,7 @@ function createTagAssignmentModal() {
                 <div class="new-tag-section">
                     <h4>Or create a new tag:</h4>
                     <div class="new-tag-form">
-                        <input type="text" id="newTagInput" class="new-tag-input" placeholder="Enter new tag name">
+                        <input type="text" id="newTagInput" class="new-tag-input" placeholder="Enter new tag name" maxlength="50">
                         <div class="new-tag-colors" id="newTagColors"></div>
                     </div>
                 </div>
@@ -3394,7 +3412,20 @@ async function handleTagAssignment() {
  * Create a new tag
  */
 async function createNewTag(name, color) {
-    const duplicate = state.tags.find(t => t.name.toLowerCase() === name.trim().toLowerCase());
+    const trimmed = typeof name === 'string' ? name.trim() : '';
+    if (!trimmed) {
+        toast('Tag name is required', false);
+        return null;
+    }
+    if (trimmed.length > 50) {
+        toast('Tag name must be 50 characters or less', false);
+        return null;
+    }
+    if (!color || !/^#[0-9a-fA-F]{3,8}$/.test(color)) {
+        toast('Invalid tag color', false);
+        return null;
+    }
+    const duplicate = state.tags.find(t => t.name.toLowerCase() === trimmed.toLowerCase());
     if (duplicate) {
         toast('Tag already exists', false);
         return null;
@@ -3402,19 +3433,20 @@ async function createNewTag(name, color) {
     return new Promise((resolve) => {
         chrome.runtime.sendMessage({
             action: 'createTag',
-            tagData: { name, color }
+            tagData: { name: trimmed, color }
         }, (response) => {
             if (response && response.success) {
                 // Add to local state
                 const newTag = {
                     id: response.tagId,
-                    name: name,
+                    name: trimmed,
                     color: color
                 };
                 state.tags.push(newTag);
                 resolve(newTag);
             } else {
                 console.error('[Popup] Failed to create tag:', response?.error);
+                toast(response?.error || 'Failed to create tag', false);
                 resolve(null);
             }
         });
@@ -3616,6 +3648,7 @@ function renderTags() {
 function selectTag(id) {
     state.selectedTagId = id;
     contactsPage = 1;
+    selectedContactIds.clear();
     renderTags();
     renderContacts();
 }
@@ -3741,6 +3774,7 @@ function renderContacts() {
             const target = Math.max(1, Math.min(totalPages, p));
             if (target === contactsPage) return;
             contactsPage = target;
+            selectedContactIds.clear();
             renderContacts();
             c.scrollTop = 0;
         };
@@ -3877,6 +3911,7 @@ function setupEventListeners() {
     const debouncedSearch = debounce((term) => {
         searchTerm = term.toLowerCase();
         contactsPage = 1;
+        selectedContactIds.clear();
         renderTags();
         renderContacts();
     }, 300);

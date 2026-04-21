@@ -792,45 +792,6 @@ loadAllState = {
 }
 
 /* ===============================
-   TOAST NOTIFICATIONS
-   Displays temporary slide-in toast messages (success, warning, error)
-   at the top-right of the page for user feedback.
-   =============================== */
-
-function showToast(message, type = 'info') {
-  $(SELECTORS.GROUPS_TOAST).remove();
-  
-  let backgroundColor;
-  switch (type) {
-    case 'success': backgroundColor = '#10b981'; break;
-    case 'error': backgroundColor = '#ef4444'; break;
-    case 'warning': backgroundColor = '#f59e0b'; break;
-    default: backgroundColor = '#6b7280';
-  }
-  
-  const toast = $(`
-    <div class="groups-toast" style="
-      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-      background: ${backgroundColor}; color: white; padding: 12px 20px;
-      border-radius: 8px; font-size: 14px; font-weight: 500; z-index: 30000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    ">${message}</div>
-  `);
-  
-  if (!$(SELECTORS.GROUPS_TOAST_ANIMATIONS).length) {
-    $('<style id="groups-toast-animations">').text(`
-      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-    `).appendTo('head');
-  }
-  
-  $('body').append(toast);
-  
-  setTimeout(() => {
-    toast.fadeOut(300, function() { $(this).remove(); });
-  }, 3000);
-}
-
-/* ===============================
    BUTTON CREATION AND INJECTION
    Builds the CRM action buttons (Load All, Select All, Tag, Send Requests) and
    injects them above the group member list. Includes select-all toggle, checkbox

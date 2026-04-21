@@ -341,15 +341,53 @@ async function getAuthToken() {
   return result.crmFixedJwtToken || null;
 }
 
+/**
+ * Wrap fetch with an AbortController timeout. MV3 service workers die at
+ * 5 minutes, and a hung request silently burns quota; fail fast at 30s
+ * so the caller's catch path runs instead.
+ */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * If the response indicates the token is dead (401), clear stored
+ * credentials so stale tokens don't persist silently.
+ * Returns true when a 401 was handled (caller should bail early).
+ */
+async function handleAuthFailure(response) {
+  if (response && response.status === 401) {
+    try {
+      if (self.fixedJwtAuth?.clearCredentials) {
+        await self.fixedJwtAuth.clearCredentials();
+      } else {
+        await chrome.storage.local.remove(['crmFixedJwtToken']);
+      }
+    } catch (e) {
+      console.warn('[Background] Failed to clear credentials on 401:', e.message);
+    }
+    chrome.runtime.sendMessage({ type: 'AUTH_REVOKED' }).catch(() => {});
+    return true;
+  }
+  return false;
+}
+
 async function campaignApiCall(method, path, body) {
   const token = await getAuthToken();
   if (!token) return null;
   try {
-    const res = await fetch(`${CONFIG.API_BASE_URL}${path}`, {
+    const res = await fetchWithTimeout(`${CONFIG.API_BASE_URL}${path}`, {
       method,
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     });
+    if (await handleAuthFailure(res)) return null;
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {
@@ -560,7 +598,7 @@ async function sendToUser(contact, text) {
 
   const tab = await chrome.tabs.create({
     url: messengerUrl,
-    active: true
+    active: false
   });
 
   await new Promise((res, rej) => {
@@ -1023,7 +1061,7 @@ async function handleTrackFriendRequest(requestData, sendResponse) {
       const tokenResult = await chrome.storage.local.get(['crmFixedJwtToken']);
       const token = tokenResult.crmFixedJwtToken;
       if (token) {
-        await fetch(`${CONFIG.API_BASE_URL}/friend-requests/sync`, {
+        const syncResp = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/friend-requests/sync`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -1032,6 +1070,7 @@ async function handleTrackFriendRequest(requestData, sendResponse) {
           },
           body: JSON.stringify({ friendRequests: [friendRequest] }),
         });
+        await handleAuthFailure(syncResp);
         console.log('[Background] Friend request synced to backend');
       }
     } catch (error) {
@@ -1178,7 +1217,7 @@ async function handleUpdateFriendRequestStatus(userId, status, timestamp, sendRe
       const tokenResult = await chrome.storage.local.get(['crmFixedJwtToken']);
       const token = tokenResult.crmFixedJwtToken;
       if (token) {
-        await fetch(`${CONFIG.API_BASE_URL}/friend-requests/bulk-update-status`, {
+        const statusResp = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/friend-requests/bulk-update-status`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -1187,6 +1226,7 @@ async function handleUpdateFriendRequestStatus(userId, status, timestamp, sendRe
           },
           body: JSON.stringify({ updates: [{ userId, status }] }),
         });
+        await handleAuthFailure(statusResp);
         console.log('[Background] Friend request status synced to backend');
       }
     } catch (error) {
@@ -1291,7 +1331,7 @@ async function handleRemoveFriendRequest(userId, sendResponse) {
       const tokenResult = await chrome.storage.local.get(['crmFixedJwtToken']);
       const token = tokenResult.crmFixedJwtToken;
       if (token) {
-        await fetch(`${CONFIG.API_BASE_URL}/friend-requests/bulk-update-status`, {
+        const cancelResp = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/friend-requests/bulk-update-status`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -1300,6 +1340,7 @@ async function handleRemoveFriendRequest(userId, sendResponse) {
           },
           body: JSON.stringify({ updates: [{ userId, status: 'cancelled' }] }),
         });
+        await handleAuthFailure(cancelResp);
         console.log('[Background] Friend request cancellation synced to backend');
       }
     } catch (error) {
@@ -1314,6 +1355,22 @@ async function handleRemoveFriendRequest(userId, sendResponse) {
     }).catch(() => {
       // Popup might not be open
     });
+
+    // Notify webapp tabs so live UI removes the entry
+    try {
+      const webappTabs = await chrome.tabs.query({ url: CONFIG.WEB_APP_TAB_PATTERNS });
+      if (webappTabs.length > 0) {
+        await Promise.all(webappTabs.map(tab =>
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'FRIEND_REQUEST_REMOVED',
+            payload: { userId: userId },
+            source: 'crm-extension'
+          }).catch(() => {})
+        ));
+      }
+    } catch (e) {
+      console.warn('[Background] Failed to notify webapp tabs of removal:', e.message);
+    }
 
     sendResponse({
       success: true,
@@ -1452,10 +1509,6 @@ async function startFriendRequestRefresh() {
       foundFriends: foundFriends?.length || 0,
       friendsData: foundFriends
     });
-
-    // Keep tab open for 10 seconds to inspect
-    console.log('[Background] 🔍 Keeping tab open for 10 seconds for inspection...');
-    await new Promise(resolve => setTimeout(resolve, 10000));
 
     // Close the tab
     await chrome.tabs.remove(friendsListTab.id);
@@ -2324,7 +2377,7 @@ async function handleLoadNotes(contactUserId, sendResponse) {
 
     console.log('[Background] Loading notes for contact:', contactUserId);
 
-    const response = await fetch(`${CONFIG.API_BASE_URL}/notes/${contactUserId}`, {
+    const response = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/notes/${contactUserId}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${jwtToken}`,
@@ -2332,6 +2385,9 @@ async function handleLoadNotes(contactUserId, sendResponse) {
       }
     });
 
+    if (await handleAuthFailure(response)) {
+      throw new Error('Authentication expired - please re-login');
+    }
     const data = await response.json();
 
     if (!data.success) {
@@ -2372,7 +2428,7 @@ async function handleAddNote(payload, sendResponse) {
       requestBody.profilePicture = profilePicture;
     }
 
-    const response = await fetch(`${CONFIG.API_BASE_URL}/notes`, {
+    const response = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/notes`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${jwtToken}`,
@@ -2381,6 +2437,9 @@ async function handleAddNote(payload, sendResponse) {
       body: JSON.stringify(requestBody)
     });
 
+    if (await handleAuthFailure(response)) {
+      throw new Error('Authentication expired - please re-login');
+    }
     const data = await response.json();
 
     if (!data.success) {
@@ -2414,7 +2473,7 @@ async function handleUpdateNote(payload, sendResponse) {
     }
     console.log('[Background] Updating note:', noteId);
 
-    const response = await fetch(`${CONFIG.API_BASE_URL}/notes/${contactUserId}/${noteId}`, {
+    const response = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/notes/${contactUserId}/${noteId}`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${jwtToken}`,
@@ -2425,6 +2484,9 @@ async function handleUpdateNote(payload, sendResponse) {
       })
     });
 
+    if (await handleAuthFailure(response)) {
+      throw new Error('Authentication expired - please re-login');
+    }
     const data = await response.json();
 
     if (!data.success) {
@@ -2458,7 +2520,7 @@ async function handleDeleteNote(payload, sendResponse) {
     }
     console.log('[Background] Deleting note:', noteId);
 
-    const response = await fetch(`${CONFIG.API_BASE_URL}/notes/${contactUserId}/${noteId}`, {
+    const response = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/notes/${contactUserId}/${noteId}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${jwtToken}`,
@@ -2466,6 +2528,9 @@ async function handleDeleteNote(payload, sendResponse) {
       }
     });
 
+    if (await handleAuthFailure(response)) {
+      throw new Error('Authentication expired - please re-login');
+    }
     const data = await response.json();
 
     if (!data.success) {
@@ -2495,7 +2560,7 @@ async function handleGetAllContactsWithNotes(sendResponse) {
 
     console.log('[Background] Getting all contacts with notes');
 
-    const response = await fetch(`${CONFIG.API_BASE_URL}/notes/contacts/all`, {
+    const response = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/notes/contacts/all`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${jwtToken}`,
@@ -2503,6 +2568,9 @@ async function handleGetAllContactsWithNotes(sendResponse) {
       }
     });
 
+    if (await handleAuthFailure(response)) {
+      throw new Error('Authentication expired - please re-login');
+    }
     const data = await response.json();
     console.log('[Background] API response:', data);
 
@@ -2798,7 +2866,7 @@ if (msg.action === 'checkFriendRequestStatuses') {
         const tags = result.tags || [];
         if (tags.length > 0) {
           console.log('[Background] Syncing', tags.length, 'tags to backend before contacts...');
-          const tagResponse = await fetch(`${CONFIG.API_BASE_URL}/tags/sync`, {
+          const tagResponse = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/tags/sync`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -2807,6 +2875,10 @@ if (msg.action === 'checkFriendRequestStatuses') {
             },
             body: JSON.stringify({ tags, fullSync: false }),
           });
+          if (await handleAuthFailure(tagResponse)) {
+            sendResponse({ success: false, error: 'Authentication expired' });
+            return;
+          }
           if (!tagResponse.ok) {
             console.warn('[Background] Tag pre-sync failed:', tagResponse.status);
           } else {
@@ -2816,7 +2888,7 @@ if (msg.action === 'checkFriendRequestStatuses') {
 
         // Now sync contacts (tags exist in backend, so tag assignments will work)
         const contacts = msg.payload?.contacts || [];
-        const response = await fetch(`${CONFIG.API_BASE_URL}/contacts/sync`, {
+        const response = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/contacts/sync`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -2825,6 +2897,10 @@ if (msg.action === 'checkFriendRequestStatuses') {
           },
           body: JSON.stringify({ contacts, fullSync: false }),
         });
+        if (await handleAuthFailure(response)) {
+          sendResponse({ success: false, error: 'Authentication expired' });
+          return;
+        }
         if (!response.ok) {
           const text = await response.text();
           console.error('[Background] Contacts sync failed:', response.status, text);
@@ -2938,7 +3014,7 @@ if (msg.action === 'checkFriendRequestStatuses') {
           return;
         }
 
-        const response = await fetch(`${CONFIG.API_BASE_URL}/facebook-accounts/validate`, {
+        const response = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/facebook-accounts/validate`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2985,7 +3061,7 @@ if (msg.action === 'checkFriendRequestStatuses') {
           return;
         }
 
-        const response = await fetch(`${CONFIG.API_BASE_URL}/facebook-accounts`, {
+        const response = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/facebook-accounts`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -3356,49 +3432,61 @@ async function syncDataToWebAppTabs(messageType, data, tabs) {
 */
 async function handleCreateTag(tagData, sendResponse) {
   console.log('[Background] Creating new tag:', tagData);
-  
+
   try {
-    // Get existing data
+    // Validate at the boundary so messages from content scripts / external
+    // callers can't bypass the popup's client-side checks.
+    const name = typeof tagData?.name === 'string' ? tagData.name.trim() : '';
+    if (!name || name.length > 50) {
+      sendResponse({ success: false, error: 'Invalid tag name' });
+      return;
+    }
+    const color = typeof tagData?.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(tagData.color)
+      ? tagData.color
+      : '#3f51b5';
+
     const result = await chrome.storage.local.get(['tags']);
     let tags = result.tags || [];
-    
-    // Create new tag
+
     const newTag = {
       id: generateId(),
-      name: tagData.name,
-      color: tagData.color,
+      name: name,
+      color: color,
       contactCount: 0
     };
-    
-    // Add to tags array
+
     tags.push(newTag);
-    
-    // Save to storage
-    await chrome.storage.local.set({ 
+
+    await chrome.storage.local.set({
       tags: tags,
       lastLocalUpdate: Date.now()
     });
-    
+
     console.log('[Background] Tag created successfully:', newTag.id);
-    sendResponse({ 
-      success: true, 
+    sendResponse({
+      success: true,
       tagId: newTag.id,
       message: 'Tag created successfully'
     });
-    
-    // Sync with webapp
-    const friendRequestsResult = await chrome.storage.local.get(['friendRequests', 'contacts']);
-    await handleDataChangeSync({
-      tags: tags,
-      contacts: friendRequestsResult.contacts || [],
-      friendRequests: friendRequestsResult.friendRequests || []
+
+    // Fire-and-log: sync failure doesn't retroactively change the success
+    // response, but a silent catch would hide real bugs.
+    (async () => {
+      const extra = await chrome.storage.local.get(['friendRequests', 'contacts']);
+      await handleDataChangeSync({
+        tags: tags,
+        contacts: extra.contacts || [],
+        friendRequests: extra.friendRequests || []
+      });
+    })().catch((err) => {
+      console.error('[Background] Tag sync to webapp failed after create:', err);
     });
-    
+
   } catch (error) {
     console.error('[Background] Error creating tag:', error);
-    sendResponse({ 
-      success: false, 
-      error: error.message 
+    sendResponse({
+      success: false,
+      error: error.message
     });
   }
 }
@@ -3543,11 +3631,13 @@ async function handleSaveContactsToTags(msg, sendResponse) {
         };
         // Tags first, wait for completion
         if (tags.length > 0) {
-          const tagResp = await fetch(`${CONFIG.API_BASE_URL}/tags/sync`, {
+          const tagResp = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/tags/sync`, {
             method: 'POST', headers,
             body: JSON.stringify({ tags }),
           });
-          if (!tagResp.ok) {
+          if (await handleAuthFailure(tagResp)) {
+            console.error('[Background] ❌ /tags/sync auth expired');
+          } else if (!tagResp.ok) {
             const body = await tagResp.text().catch(() => '');
             console.error('[Background] ❌ /tags/sync rejected', tagResp.status, body.slice(0, 500));
           }
@@ -3555,11 +3645,13 @@ async function handleSaveContactsToTags(msg, sendResponse) {
         // Then contacts (tags now exist in backend)
         if (contacts.length > 0) {
           const safeContacts = contacts.map(sanitizeContactForSync);
-          const contactResp = await fetch(`${CONFIG.API_BASE_URL}/contacts/sync`, {
+          const contactResp = await fetchWithTimeout(`${CONFIG.API_BASE_URL}/contacts/sync`, {
             method: 'POST', headers,
             body: JSON.stringify({ contacts: safeContacts }),
           });
-          if (!contactResp.ok) {
+          if (await handleAuthFailure(contactResp)) {
+            console.error('[Background] ❌ /contacts/sync auth expired');
+          } else if (!contactResp.ok) {
             const body = await contactResp.text().catch(() => '');
             console.error('[Background] ❌ /contacts/sync rejected', contactResp.status, body.slice(0, 500));
           } else {
