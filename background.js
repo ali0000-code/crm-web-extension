@@ -2760,43 +2760,21 @@ if (msg.action === 'checkFriendRequestStatuses') {
   if (msg.type === 'SYNC_CONTACTS_TO_EXTENSION') {
     console.log('[Background] Syncing contacts from web app:', msg.payload?.contacts?.length);
     if (msg.payload?.contacts) {
-      // Normalize tags to plain string IDs (webapp may send objects with id+pivot)
       const incomingContacts = msg.payload.contacts.map(c => ({
         ...c,
         tags: Array.isArray(c.tags) ? c.tags.map(t => typeof t === 'object' && t !== null ? t.id : t).filter(Boolean) : []
       }));
-      // Merge: preserve local tag assignments not yet in backend
-      chrome.storage.local.get(['contacts'], (result) => {
-        const localContacts = result.contacts || [];
-        const localMap = new Map();
-        for (const lc of localContacts) {
-          if (lc.userId) localMap.set(lc.userId, lc);
-          if (lc.name) localMap.set('n:' + lc.name, lc);
-        }
-        // Merge local tags into incoming contacts
-        for (const ic of incomingContacts) {
-          const local = (ic.userId && localMap.get(ic.userId)) || localMap.get('n:' + ic.name);
-          if (local && Array.isArray(local.tags)) {
-            local.tags.forEach(t => {
-              if (!ic.tags.includes(t)) ic.tags.push(t);
-            });
-          }
-        }
-        // Include local-only contacts not in webapp
-        const incomingIds = new Set(incomingContacts.map(c => c.id));
-        const incomingUserIds = new Set(incomingContacts.map(c => c.userId).filter(Boolean));
-        const localOnly = localContacts.filter(c =>
-          !incomingIds.has(c.id) && !(c.userId && incomingUserIds.has(c.userId))
-        );
-        const merged = [...incomingContacts, ...localOnly];
-        chrome.storage.local.set({
-          contacts: merged,
-          lastWebUpdate: Date.now()
-        }, () => {
-          sendResponse({ success: true, count: merged.length });
-        });
+      // Webapp snapshot is authoritative: full replace so webapp deletions
+      // propagate live. Extension-scraped contacts get uploaded via
+      // SYNC_CONTACTS_TO_BACKEND immediately after scrape, so they return
+      // on the next webapp push.
+      chrome.storage.local.set({
+        contacts: incomingContacts,
+        lastWebUpdate: Date.now()
+      }, () => {
+        sendResponse({ success: true, count: incomingContacts.length });
       });
-      return true; // Async response
+      return true;
     }
     sendResponse({ success: false, error: 'No contacts provided' });
     return false;
@@ -2805,23 +2783,15 @@ if (msg.action === 'checkFriendRequestStatuses') {
   if (msg.type === 'SYNC_TAGS_TO_EXTENSION') {
     console.log('[Background] Syncing tags from web app:', msg.payload?.tags?.length);
     if (msg.payload?.tags) {
-      // Merge: preserve local-only tags not yet in backend
-      chrome.storage.local.get(['tags'], (result) => {
-        const localTags = result.tags || [];
-        const incomingIds = new Set(msg.payload.tags.map(t => t.id));
-        const incomingNames = new Set(msg.payload.tags.map(t => (t.name || '').toLowerCase()));
-        const localOnly = localTags.filter(t =>
-          !incomingIds.has(t.id) && !incomingNames.has((t.name || '').toLowerCase())
-        );
-        const merged = [...msg.payload.tags, ...localOnly];
-        chrome.storage.local.set({
-          tags: merged,
-          lastWebUpdate: Date.now()
-        }, () => {
-          sendResponse({ success: true, count: merged.length });
-        });
+      // Webapp snapshot is authoritative: full replace so webapp deletions
+      // propagate live. Merging would preserve deleted tags forever.
+      chrome.storage.local.set({
+        tags: msg.payload.tags,
+        lastWebUpdate: Date.now()
+      }, () => {
+        sendResponse({ success: true, count: msg.payload.tags.length });
       });
-      return true; // Async response
+      return true;
     }
     sendResponse({ success: false, error: 'No tags provided' });
     return false;
@@ -3129,36 +3099,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         ...c,
         tags: Array.isArray(c.tags) ? c.tags.map(t => typeof t === 'object' && t !== null ? t.id : t).filter(Boolean) : []
       }));
-      // Merge: preserve local tag assignments not yet in backend
-      chrome.storage.local.get(['contacts'], (result) => {
-        const localContacts = result.contacts || [];
-        const localMap = new Map();
-        for (const lc of localContacts) {
-          if (lc.userId) localMap.set(lc.userId, lc);
-          if (lc.name) localMap.set('n:' + lc.name, lc);
-        }
-        for (const ic of incomingContacts) {
-          const local = (ic.userId && localMap.get(ic.userId)) || localMap.get('n:' + ic.name);
-          if (local && Array.isArray(local.tags)) {
-            local.tags.forEach(t => {
-              if (!ic.tags.includes(t)) ic.tags.push(t);
-            });
-          }
-        }
-        const incomingIds = new Set(incomingContacts.map(c => c.id));
-        const incomingUserIds = new Set(incomingContacts.map(c => c.userId).filter(Boolean));
-        const localOnly = localContacts.filter(c =>
-          !incomingIds.has(c.id) && !(c.userId && incomingUserIds.has(c.userId))
-        );
-        const merged = [...incomingContacts, ...localOnly];
-        chrome.storage.local.set({
-          contacts: merged,
-          lastWebUpdate: Date.now()
-        }, () => {
-          sendResponse({ success: true, count: merged.length });
-        });
+      // Webapp snapshot is authoritative: full replace.
+      chrome.storage.local.set({
+        contacts: incomingContacts,
+        lastWebUpdate: Date.now()
+      }, () => {
+        sendResponse({ success: true, count: incomingContacts.length });
       });
-      return true; // Async response
+      return true;
     }
     sendResponse({ success: false, error: 'No contacts provided' });
     return false;
@@ -3167,22 +3115,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SYNC_TAGS_TO_EXTENSION') {
     console.log('[Background] External sync tags from web app:', msg.payload?.tags?.length, 'tags');
     if (msg.payload?.tags) {
-      chrome.storage.local.get(['tags'], (result) => {
-        const localTags = result.tags || [];
-        const incomingIds = new Set(msg.payload.tags.map(t => t.id));
-        const incomingNames = new Set(msg.payload.tags.map(t => (t.name || '').toLowerCase()));
-        const localOnly = localTags.filter(t =>
-          !incomingIds.has(t.id) && !incomingNames.has((t.name || '').toLowerCase())
-        );
-        const merged = [...msg.payload.tags, ...localOnly];
-        chrome.storage.local.set({
-          tags: merged,
-          lastWebUpdate: Date.now()
-        }, () => {
-          sendResponse({ success: true, count: merged.length });
-        });
+      // Webapp snapshot is authoritative: full replace.
+      chrome.storage.local.set({
+        tags: msg.payload.tags,
+        lastWebUpdate: Date.now()
+      }, () => {
+        sendResponse({ success: true, count: msg.payload.tags.length });
       });
-      return true; // Async response
+      return true;
     }
     sendResponse({ success: false, error: 'No tags provided' });
     return false;

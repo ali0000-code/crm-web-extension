@@ -58,9 +58,10 @@ let searchTerm = '';
 const CONTACTS_PER_PAGE = 50;
 let contactsPage = 1;
 
-// Selection is cleared on page change, tag filter change, and search so
-// users never act on invisible rows. Rendering restores checkbox state
-// from this set for the currently-visible page.
+// Selection persists across pages so bulk actions can span the full
+// filtered set. Tag filter change and search still clear since they
+// redefine the visible universe. Rendering restores checkbox state from
+// this set for the currently-visible page.
 const selectedContactIds = new Set();
 
 /* ===============================
@@ -381,25 +382,20 @@ async function fetchDataFromBackend() {
             updateUserProfile();
         }
 
-        // Merge into local state
-        if (Array.isArray(tags) && tags.length > 0) {
-            // Merge: keep any local-only tags that haven't synced to backend yet (dedup by id AND name)
-            const backendTagIds = new Set(tags.map(t => t.id));
-            const backendTagNames = new Set(tags.map(t => (t.name || '').toLowerCase()));
-            const localOnly = state.tags.filter(t =>
-                !backendTagIds.has(t.id) && !backendTagNames.has((t.name || '').toLowerCase())
-            );
-            state.tags = [...tags, ...localOnly];
+        // Backend is authoritative. Full replace so webapp deletions propagate.
+        // Skip replace only when the backend collection is empty AND local has
+        // entries (first-login case where extension has scraped data before
+        // initial sync has uploaded). Once any item exists in backend, that
+        // response is the truth.
+        if (Array.isArray(tags)) {
+            if (tags.length > 0 || state.tags.length === 0) {
+                state.tags = tags;
+            }
         }
-        if (Array.isArray(contacts) && contacts.length > 0) {
-            // Backend is source of truth for contacts and their tags.
-            // Only keep local-only contacts (not yet synced to backend).
-            const backendIds = new Set(contacts.map(c => c.id));
-            const backendUserIds = new Set(contacts.map(c => c.userId).filter(Boolean));
-            const localOnlyContacts = state.contacts.filter(c =>
-                !backendIds.has(c.id) && !(c.userId && backendUserIds.has(c.userId))
-            );
-            state.contacts = [...contacts, ...localOnlyContacts];
+        if (Array.isArray(contacts)) {
+            if (contacts.length > 0 || state.contacts.length === 0) {
+                state.contacts = contacts;
+            }
         }
         if (Array.isArray(templates) && templates.length > 0) state.templates = templates;
         if (Array.isArray(friendRequests) && friendRequests.length > 0) {
@@ -428,7 +424,7 @@ async function fetchDataFromBackend() {
     }
 }
 
-async function saveState(priority = 'normal') {
+async function saveState(priority = 'normal', { syncRemote = true } = {}) {
     try {
         const dataToSave = {
             tags: state.tags,
@@ -436,33 +432,35 @@ async function saveState(priority = 'normal') {
             templates: state.templates,
             currentTemplateIndex: state.currentTemplateIndex
         };
-        
+
         await storageManager.saveBatch(dataToSave, { priority });
         console.log('[Popup] State saved successfully');
-        
-        // Sync to backend API (always works, even if webapp is closed)
-        try {
-            await syncToBackend();
-        } catch (error) {
-            console.warn('[Popup] Backend sync failed:', error.message);
+
+        // Remote sync is opt-out: pure UI state changes (checkbox toggles,
+        // selection) pass syncRemote=false so they don't republish stale
+        // tags/contacts back to the backend, which would resurrect items
+        // deleted in the webapp.
+        if (syncRemote) {
+            try {
+                await syncToBackend();
+            } catch (error) {
+                console.warn('[Popup] Backend sync failed:', error.message);
+            }
+
+            try {
+                await syncToWebApp();
+            } catch (error) {
+                console.log('[Popup] Webapp tab sync failed:', error.message);
+            }
+
+            chrome.runtime.sendMessage({
+                type: 'DATA_CHANGED',
+                payload: dataToSave
+            }).catch(() => {
+                console.log('[Popup] Background script notification sent');
+            });
         }
 
-        // Also sync to open webapp tabs for live updates
-        try {
-            await syncToWebApp();
-        } catch (error) {
-            console.log('[Popup] Webapp tab sync failed:', error.message);
-        }
-        
-        // Also notify background script to handle sync in case popup closes
-        chrome.runtime.sendMessage({
-            type: 'DATA_CHANGED',
-            payload: dataToSave
-        }).catch(() => {
-            // Popup might be closing, this is expected
-            console.log('[Popup] Background script notification sent');
-        });
-        
         return { success: true };
     } catch (error) {
         console.error('[Popup] Failed to save state:', error);
@@ -3576,7 +3574,7 @@ function renderTags() {
                     } else {
                         state.checkedTagIds.delete(t.id);
                     }
-                    saveState();
+                    saveState('normal', { syncRemote: false });
                 }, 0);
                 return;
             }
@@ -3598,7 +3596,7 @@ function renderTags() {
                     selectTag(null);
                 }
             }
-            saveState();
+            saveState('normal', { syncRemote: false });
         };
         
         c.appendChild(row);
@@ -3620,7 +3618,7 @@ function renderTags() {
                     state.checkedTagIds.delete(tagId);
                 }
             });
-            saveState();
+            saveState('normal', { syncRemote: false });
             updateRemoveTagsBtn();
         };
     }
@@ -3774,7 +3772,6 @@ function renderContacts() {
             const target = Math.max(1, Math.min(totalPages, p));
             if (target === contactsPage) return;
             contactsPage = target;
-            selectedContactIds.clear();
             renderContacts();
             c.scrollTop = 0;
         };
@@ -4857,6 +4854,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Start periodic device validation check
         if (authState.isAuthenticated) {
             startDeviceValidationCheck();
+            startBackendRefreshPoll();
         }
 
         console.log('[Popup] Complete initialization finished');
@@ -4867,6 +4865,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         showAuthModal();
     }
 });
+
+/**
+ * Poll backend every 10s so webapp-side deletes/edits reflect in the
+ * extension popup without waiting for the user to reopen it.
+ */
+let backendRefreshInterval = null;
+
+function startBackendRefreshPoll() {
+    if (backendRefreshInterval) clearInterval(backendRefreshInterval);
+    backendRefreshInterval = setInterval(async () => {
+        if (!authState.isAuthenticated || !window.fixedJwtAuth?.token) return;
+        try {
+            const ok = await fetchDataFromBackend();
+            if (ok) {
+                renderTags();
+                renderContacts();
+                updateTemplateUI();
+            }
+        } catch (err) {
+            console.warn('[Popup] Backend refresh poll failed:', err.message);
+        }
+    }, 10000);
+}
 
 /**
  * Periodic device validation check

@@ -974,7 +974,28 @@ function createButtons() {
     loadAllBtn.onclick = startLoadAllProcess;
     selectAllBtn.onclick = handleSelectAll;
     tagBtn.onclick = openTagModal;
-    sendRequestBtn.onclick = handleSendRequests;
+    sendRequestBtn.onclick = () => {
+        if (friendRequestSendState.active) {
+            friendRequestSendState.cancelled = true;
+            showToast('Stopping after current request...', 'warning');
+            return;
+        }
+        handleSendRequests();
+    };
+}
+
+const friendRequestSendState = { active: false, cancelled: false };
+
+function setSendButtonMode(mode, count = 0) {
+    const btn = document.getElementById('groups-send-request');
+    if (!btn) return;
+    if (mode === 'sending') {
+        btn.innerHTML = `Stop Sending (${count} left)`;
+        btn.style.background = '#dc2626';
+    } else {
+        btn.innerHTML = 'Send Requests (<span id="request-counter">0</span>)';
+        btn.style.background = '#9333ea';
+    }
 }
 
 function updateButtons() {
@@ -1035,9 +1056,10 @@ const eligibleForRequest = Array.from(window.selectedGroupMembers).filter(member
     tagBtn.style.opacity = count > 0 ? '1' : '0.8';
   }
   
-  // Update send request button appearance
+  // Update send request button appearance (skip while sending — Stop label
+  // owns background/opacity in that mode).
   const sendRequestBtn = $(SELECTORS.GROUPS_SEND_REQUEST)[0];
-  if (sendRequestBtn) {
+  if (sendRequestBtn && !friendRequestSendState.active) {
     sendRequestBtn.style.background = eligibleForRequest > 0 ? '#9333ea' : '#94a3b8';
     sendRequestBtn.style.opacity = eligibleForRequest > 0 ? '1' : '0.8';
   }
@@ -1186,10 +1208,19 @@ function handleSendRequests() {
 async function sendFriendRequestsSequentially(eligibleMembers) {
   let successCount = 0;
   let skipCount = 0;
-  
+
+  friendRequestSendState.active = true;
+  friendRequestSendState.cancelled = false;
+  setSendButtonMode('sending', eligibleMembers.length);
+
   showToast(`Starting to send ${eligibleMembers.length} friend requests...`, 'success');
-  
+
   for (let i = 0; i < eligibleMembers.length; i++) {
+    if (friendRequestSendState.cancelled) {
+      showToast(`Stopped. Sent ${successCount} of ${eligibleMembers.length}.`, 'warning');
+      break;
+    }
+    setSendButtonMode('sending', eligibleMembers.length - i);
     const { member, row } = eligibleMembers[i];
     
     try {
@@ -1261,9 +1292,15 @@ async function sendFriendRequestsSequentially(eligibleMembers) {
         skipCount++;
       }
       
-      // Add delay between requests to avoid spam detection
+      // Add delay between requests to avoid spam detection. Poll in small
+      // slices so cancel flag aborts the wait promptly.
       if (i < eligibleMembers.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
+        const waitMs = 1500 + Math.random() * 1000;
+        const deadline = Date.now() + waitMs;
+        while (Date.now() < deadline) {
+          if (friendRequestSendState.cancelled) break;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
       
     } catch (error) {
@@ -1272,15 +1309,19 @@ async function sendFriendRequestsSequentially(eligibleMembers) {
     }
   }
   
-  // Show completion message
-  let message = `Friend request sending complete!\n`;
-  message += `• Sent & Tracked: ${successCount}\n`;
-  if (skipCount > 0) {
-    message += `• Skipped: ${skipCount}`;
+  friendRequestSendState.active = false;
+  friendRequestSendState.cancelled = false;
+  setSendButtonMode('idle');
+
+  if (successCount > 0 || skipCount > 0) {
+    let message = `Friend request sending complete!\n`;
+    message += `• Sent & Tracked: ${successCount}\n`;
+    if (skipCount > 0) {
+      message += `• Skipped: ${skipCount}`;
+    }
+    showToast(message, 'success');
   }
-  
-  showToast(message, 'success');
-  
+
   // Update button counts since some may have changed from "Add friend" to "Cancel request"
   setTimeout(() => {
     updateButtons();
