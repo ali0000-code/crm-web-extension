@@ -833,6 +833,11 @@ function showFacebookLinkingPage(errorCode) {
         Open Facebook
       </button>
 
+      <!-- Manual fallback note -->
+      <div style="margin-top: 16px; font-size: 12px; opacity: 0.85; line-height: 1.5; max-width: 320px; margin-left: auto; margin-right: auto;">
+        If it doesn't link automatically, open the webapp → <strong>Facebook Accounts</strong> and paste your profile URL.
+      </div>
+
       <!-- Sign Out Link -->
       <div style="margin-top: 24px;">
         <button id="signOutFromLinkingBtn" style="

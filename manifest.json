@@ -48,6 +48,14 @@
       "run_at": "document_end"
     },
     {
+      "matches": ["https://www.facebook.com/"],
+      "js": [
+        "config.js",
+        "facebookAutoLink.js"
+      ],
+      "run_at": "document_end"
+    },
+    {
       "matches": [
         "http://localhost/*",
         "http://127.0.0.1/*"
